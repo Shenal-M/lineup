@@ -1,0 +1,1 @@
+{"name":"lineup-release-tracker","private":true,"type":"module","scripts":{"start":"node --disable-warning=ExperimentalWarning src/server.ts","test":"node --disable-warning=ExperimentalWarning tests/releases.test.ts","worker":"node src/worker.ts","import":"node src/import.ts"},"engines":{"node":">=24"}}
