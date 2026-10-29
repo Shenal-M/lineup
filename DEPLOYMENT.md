@@ -1,3 +1,7 @@
+# Vercel / Supabase option
+
+For Vercel, use [SUPABASE.md](SUPABASE.md). It documents durable PostgreSQL storage, email delivery and hourly scheduling. The SQLite hosting instructions below apply only when DATABASE_URL is unset.
+
 # Lineup: what to set up
 
 Lineup is a single-owner personal app. Its account, password hash, login sessions, follows, settings, observations, release dates, and in-app notifications live in one SQLite database. They do not depend on browser local storage.

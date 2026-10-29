@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { emailConfigured } from "../email";
 import { getRuntime } from "./runtime";
 import {
   searchTMDB,
@@ -8,7 +9,7 @@ import {
 } from "../providers";
 
 export async function handleApi(request: Request) {
-  const { store, auth } = getRuntime();
+  let initialized = false;
   const responseHeaders = new Headers({ "Cache-Control": "no-store" });
   const req = {
     method: request.method,
@@ -21,9 +22,10 @@ export async function handleApi(request: Request) {
   const send = (status: number, data: unknown) =>
     Response.json(data, { status, headers: responseHeaders });
   const u = new URL(request.url);
-  function validateRelease(e: any) {
+  async function validateRelease(e: any) {
+    const { store } = await getRuntime();
     if (
-      !store.get("titles", e.titleId) ||
+      !(await store.get("titles", e.titleId)) ||
       !["US", "GB", "LK"].includes(e.market) ||
       !["theatrical", "streaming"].includes(e.medium) ||
       !["day", "month", "quarter", "year", "unknown"].includes(e.precision) ||
@@ -50,6 +52,8 @@ export async function handleApi(request: Request) {
     return e;
   }
   try {
+    const { store, auth } = await getRuntime();
+    initialized = true;
     if (!["GET", "HEAD"].includes(req.method || "")) {
       const origin = req.headers.origin;
       if (
@@ -66,20 +70,20 @@ export async function handleApi(request: Request) {
         return send(413, { error: "Request too large" });
       body = JSON.parse(raw || "{}");
     }
-    const signedIn = auth.authenticated(req);
+    const signedIn = await auth.authenticated(req);
     if (u.pathname === "/api/auth/status" && req.method === "GET")
       return send(200, {
-        setupRequired: !auth.user(),
+        setupRequired: !(await auth.user()),
         setupKeyRequired: !!process.env.SETUP_KEY,
         authenticated: signedIn,
-        user: signedIn ? auth.user() : null,
+        user: signedIn ? await auth.user() : null,
       });
     const address = req.socket.remoteAddress || "local";
     if (u.pathname === "/api/auth/setup" && req.method === "POST") {
       if (
-        process.env.COOKIE_SECURE === "true" &&
+        (process.env.COOKIE_SECURE === "true" || process.env.VERCEL) &&
         !process.env.SETUP_KEY &&
-        !auth.user()
+        !(await auth.user())
       )
         return send(503, {
           error:
@@ -111,7 +115,7 @@ export async function handleApi(request: Request) {
       return send(result.status, result);
     }
     if (u.pathname === "/api/auth/logout" && req.method === "POST") {
-      auth.logout(req, res);
+      await auth.logout(req, res);
       return send(200, { ok: true });
     }
     const bearer = req.headers.authorization || "";
@@ -135,15 +139,19 @@ export async function handleApi(request: Request) {
       return send(200, { ok: true });
     }
     if (u.pathname === "/api/state" && req.method === "GET") {
-      store.tick();
+      await store.tick();
       return send(200, {
-        titles: store.all("titles"),
-        releases: store.all("releases"),
-        subscriptions: store.all("subscriptions"),
-        settings: store.get("settings", "user"),
-        notifications: store.all("notifications"),
-        health: store.all("health"),
-        sources: { tmdb: !!process.env.TMDB_TOKEN, streaming: false },
+        titles: await store.all("titles"),
+        releases: await store.all("releases"),
+        subscriptions: await store.all("subscriptions"),
+        settings: await store.get("settings", "user"),
+        notifications: await store.all("notifications"),
+        health: await store.all("health"),
+        sources: {
+          tmdb: !!process.env.TMDB_TOKEN,
+          streaming: false,
+          email: !!process.env.DATABASE_URL && emailConfigured(),
+        },
       });
     }
     if (u.pathname === "/api/search" && req.method === "GET") {
@@ -151,21 +159,24 @@ export async function handleApi(request: Request) {
       if (!q.trim()) return send(200, []);
       if (process.env.TMDB_TOKEN) {
         const rows = await searchTMDB(q);
-        rows.forEach((t: any) => store.put("titles", t));
+        for (const t of rows) await store.put("titles", t);
         return send(200, rows);
       }
       return send(
         200,
-        store
-          .all("titles")
-          .filter((t) => t.name.toLowerCase().includes(q.toLowerCase())),
+        (await store.all("titles")).filter((t) =>
+          t.name.toLowerCase().includes(q.toLowerCase()),
+        ),
       );
     }
     const titleRoute = u.pathname.match(
       /^\/api\/titles\/([^/]+)(?:\/seasons\/(\d+))?$/,
     );
     if (titleRoute && req.method === "GET") {
-      const title = store.get("titles", decodeURIComponent(titleRoute[1]));
+      const title = await store.get(
+        "titles",
+        decodeURIComponent(titleRoute[1]),
+      );
       if (!title) return send(404, { error: "Title not found" });
       if (!process.env.TMDB_TOKEN || !title.tmdbId) return send(200, title);
       const season = titleRoute[2] ? Number(titleRoute[2]) : null;
@@ -175,12 +186,12 @@ export async function handleApi(request: Request) {
         season !== null
           ? await hydrateSeason(title, season)
           : await hydrateTitle(title);
-      store.put("titles", hydrated);
+      await store.put("titles", hydrated);
       return send(200, hydrated);
     }
     if (u.pathname === "/api/subscriptions" && req.method === "POST") {
       if (
-        !store.get("titles", body.titleId) ||
+        !(await store.get("titles", body.titleId)) ||
         !["US", "GB", "LK"].includes(body.market) ||
         !["theatrical", "streaming"].includes(body.medium) ||
         !Array.isArray(body.services) ||
@@ -201,19 +212,28 @@ export async function handleApi(request: Request) {
         body.scope === "channel"
           ? `${base}:channel:${encodeURIComponent(body.services[0] || "any")}`
           : body.id &&
-              store.get("subscriptions", body.id)?.titleId === body.titleId &&
-              store.get("subscriptions", body.id)?.market === body.market &&
-              store.get("subscriptions", body.id)?.medium === body.medium
+              (await store.get("subscriptions", body.id))?.titleId ===
+                body.titleId &&
+              (await store.get("subscriptions", body.id))?.market ===
+                body.market &&
+              (await store.get("subscriptions", body.id))?.medium ===
+                body.medium
             ? body.id
             : base;
-      store.put("subscriptions", { ...body, id });
+      await store.put("subscriptions", {
+        ...body,
+        id,
+        createdAt:
+          (await store.get("subscriptions", id))?.createdAt ||
+          new Date().toISOString(),
+      });
       return send(200, { id });
     }
     if (
       u.pathname.startsWith("/api/subscriptions/") &&
       req.method === "DELETE"
     ) {
-      store.unfollow(decodeURIComponent(u.pathname.slice(19)));
+      await store.unfollow(decodeURIComponent(u.pathname.slice(19)));
       return send(200, { ok: true });
     }
     if (u.pathname === "/api/settings" && req.method === "PATCH") {
@@ -229,7 +249,7 @@ export async function handleApi(request: Request) {
         body.hour > 23
       )
         throw Error("Invalid settings");
-      store.put("settings", {
+      await store.put("settings", {
         id: "user",
         market: body.market,
         timezone: body.timezone,
@@ -238,21 +258,23 @@ export async function handleApi(request: Request) {
       return send(200, { ok: true });
     }
     if (u.pathname === "/api/releases" && req.method === "POST") {
-      const e = validateRelease({
+      const e = await validateRelease({
         ...body,
         id: randomUUID(),
         revision: 1,
         manual: true,
       });
-      return send(200, store.upsert(e));
+      return send(200, await store.upsert(e));
     }
     if (u.pathname.startsWith("/api/releases/") && req.method === "PATCH") {
       const id = u.pathname.split("/").pop()!;
-      const e = store.get("releases", id);
+      const e = await store.get("releases", id);
       if (!e) return send(404, { error: "Release not found" });
       return send(
         200,
-        store.upsert(validateRelease({ ...e, ...body, id, manual: true })),
+        await store.upsert(
+          await validateRelease({ ...e, ...body, id, manual: true }),
+        ),
       );
     }
     if (u.pathname === "/api/import" && req.method === "POST") {
@@ -274,7 +296,7 @@ export async function handleApi(request: Request) {
           ),
         });
       } catch (e: any) {
-        store.put("health", {
+        await store.put("health", {
           id: "tmdb",
           state: "error",
           updatedAt: new Date().toISOString(),
@@ -284,15 +306,18 @@ export async function handleApi(request: Request) {
       }
     }
     if (u.pathname === "/api/notifications/read" && req.method === "POST") {
-      store
-        .all("notifications")
-        .forEach((n) => store.put("notifications", { ...n, read: true }));
+      for (const n of await store.all("notifications"))
+        await store.put("notifications", { ...n, read: true });
       return send(200, { ok: true });
     }
     return send(404, { error: "Not found" });
   } catch (e: unknown) {
-    return send(400, {
-      error: e instanceof Error ? e.message : "Request failed",
+    return send(initialized ? 400 : 503, {
+      error: !initialized
+        ? "Database unavailable. Check DATABASE_URL and apply the Supabase database migration."
+        : e instanceof Error
+          ? e.message
+          : "Request failed",
     });
   }
 }

@@ -185,10 +185,15 @@ export function SettingsPage({
           <fieldset>
             <legend>Notifications</legend>
             <p>
-              In-app inbox and a durable, deduplicated outbox are enabled. The
-              server checks every minute while running after first API access.
+              In-app reminders follow your selected channels and reminder rules.
+              Scheduled email checks use your reminder timezone.
             </p>
-            <p>Email, phone push, and weekly digests are not connected yet.</p>
+            <p>
+              {state.sources.email
+                ? `Email delivery is configured for ${user.email}. Scheduled checks must be enabled to send reminders while the app is closed.`
+                : "Email delivery is not configured yet."}
+            </p>
+            <p>Phone push and weekly digests are not connected.</p>
             <button onClick={() => openInbox().catch(onError)}>
               Open notification inbox →
             </button>
@@ -248,7 +253,7 @@ export function SettingsPage({
             </p>
             <p>
               Follows, settings, release history, and notifications live in a
-              persistent SQLite database. Back up the data directory.
+              server database. Keep database backups.
             </p>
           </fieldset>
         </div>

@@ -8,7 +8,7 @@ with tempfile.TemporaryDirectory() as tmp:
 import {openStore} from './src/store.ts';
 import {createAuth} from './src/auth.ts';
 import {seed} from './src/seed.ts';
-const store=openStore(process.env.DB_PATH);seed(store);
+const store=openStore(process.env.DB_PATH);await seed(store);
 let cookie='';const auth=createAuth(store.db);
 await auth.setup('legacy@example.com','a-legacy-owner-password',{setHeader:(key,value)=>{cookie=value.split(';')[0];}});
 store.put('settings',{id:'user',market:'GB',timezone:'Asia/Colombo',hour:10});

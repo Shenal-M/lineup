@@ -2,6 +2,10 @@
 
 A minimal personal movie and TV release tracker: near-black surfaces, white type, lilac actions, and channel-specific release notifications.
 
+## Vercel deployment with Supabase and email
+
+See [SUPABASE.md](SUPABASE.md) for database migration SQL, Vercel environment variables, Resend sender setup, and hourly Supabase Cron scheduling. Set DATABASE_URL to use PostgreSQL; local SQLite is the fallback for development. Email notifications are implemented for the PostgreSQL workflow.
+
 ## Start
 
 Requires Node.js 24+. Lineup now uses Next.js 16 App Router, React 19, and TypeScript. The server runs in the Node.js runtime with durable SQLite storage.
@@ -31,7 +35,7 @@ For access from other devices, deploy one HTTPS instance with a persistent disk 
 - Notification rules and source/date corrections under expandable sections.
 - First-run owner setup; email/password sign-in; 30-day HTTP-only session cookies; sign-out and password change. Passwords use salted scrypt; session tokens are stored only as hashes. Failed sign-ins are rate-limited.
 - Durable follows, observations, manual corrections, material release revisions, notification deduplication and supersession of stale queued alerts.
-- In-app reminders for date announcements/changes and optional 7-day, 1-day and release-day alerts. The Node.js runtime starts a single reminder timer on first API access, checking every minute while the process remains alive and on state requests.
+- In-app reminders for date announcements/changes and optional 7-day, 1-day and release-day alerts. Checks run on state requests and through the worker or protected scheduled endpoint.
 - Server-side TMDB integration for live title search, posters, metadata, series seasons, episodes and regional theatrical import. Each season is a distinct follow target. Original air dates do not automatically become regional streaming premieres.
 - No playback or provider storefront links.
 
@@ -54,10 +58,10 @@ Sample titles, dates and provider associations are illustrative, not verified. S
 ## Remaining integrations and limits
 
 - Movie of the Night streaming-premiere feed is not implemented yet. Add streaming dates with source-backed announcements for now.
-- Email/phone delivery and weekly digests are not implemented. The inbox works; a Resend key alone will not send email yet.
+- Email delivery is implemented with PostgreSQL, Resend, and scheduled requests; see SUPABASE.md. Phone push and weekly digests are not implemented.
 - Theatrical import currently handles the first discovery page per month. Pagination and automatic source-refresh scheduling remain to be implemented.
 - A TVmaze adapter stores schedule observations only; market/offer verification and automatic scheduling are unfinished. Published use requires CC BY-SA attribution.
-- The reminder worker must run. Missed scheduled reminder days during downtime are not backfilled. Persistent announcement/change jobs remain queued.
+- The reminder worker or Supabase Cron must run. PostgreSQL catches up checks for up to seven days; local SQLite checks only the current day. Persistent announcement/change jobs remain queued.
 - No email verification or forgotten-password email flow. This is one owner's library, not multi-user registration.
 - Use one process/instance with durable SQLite storage and backups. Do not place the database on an ephemeral filesystem. Multiple instances need a shared database migration.
 - Sri Lankan dates are unknown unless sourced locally. Selecting a market never substitutes another country's release date.

@@ -40,7 +40,7 @@ export type State = {
   settings: Settings;
   notifications: Notice[];
   health: { id: string; state: string; note: string; updatedAt: string }[];
-  sources: { tmdb: boolean; streaming: boolean };
+  sources: { tmdb: boolean; streaming: boolean; email?: boolean };
 };
 export type Page = "upcoming" | "search" | "following" | "settings";
 export type User = { email: string };
@@ -95,7 +95,16 @@ export async function api<T = Record<string, unknown>>(
     cache: "no-store",
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
-  const result = await res.json();
+  const text = await res.text();
+  let result;
+  try {
+    result = JSON.parse(text);
+  } catch {
+    throw new ApiError(
+      `Server returned an invalid response (HTTP ${res.status}). Check deployment configuration.`,
+      res.status,
+    );
+  }
   if (!res.ok) throw new ApiError(result.error || "Request failed", res.status);
   return result;
 }
