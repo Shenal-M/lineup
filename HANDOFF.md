@@ -1,6 +1,6 @@
 # Lineup — session handoff
 
-Prepared 29 October 2026 (Asia/Colombo). Read this, [README.md](README.md), [DEPLOYMENT.md](DEPLOYMENT.md), and then [RESEARCH.md](RESEARCH.md) before continuing. This preserves decisions from the original conversation; the new session will not automatically receive that conversation.
+Updated 29 October 2026 (Asia/Colombo), after the approved Next.js migration. Read this, [README.md](README.md), [DEPLOYMENT.md](DEPLOYMENT.md), and then [RESEARCH.md](RESEARCH.md) before continuing. This preserves decisions from the original conversation; the new session will not automatically receive that conversation.
 
 ## Product and user intent
 
@@ -40,8 +40,9 @@ Research scope, accepted as the build basis:
 
 ### Application
 
-- TypeScript on Node.js 24+, using native TypeScript execution, the built-in HTTP server, and native SQLite. No application dependency installation is needed.
-- Plain browser HTML/CSS/JavaScript; no frontend framework or build step.
+- **Next.js 16 App Router, React 19, and TypeScript** on Node.js 24+, with native SQLite retained. Install locked dependencies with `npm ci`; use `npm run dev`, or `npm run build` followed by `npm start`.
+- Typed React components replace the legacy HTML-string UI. `/`, `/search`, `/following`, and `/settings` are real routes. The old `public/app.js`, static HTML/CSS files, and custom `src/server.ts` were removed.
+- `app/api/[...path]/route.ts` exposes the existing API in the Node.js runtime. `src/lib/runtime.ts` keeps a singleton database/auth/reminder timer per process; it starts on first API access.
 - Upcoming, Search, Following, and Settings. List/poster views, month navigation, category filters, and explicit US/GB/LK markets.
 - Title popup with large poster, description, genre/year/media tags, channel/date rows, and bell buttons. Extra unsourced streaming channels can be expanded and followed before their dates are announced.
 - Independent channel follows: following Netflix and Apple TV for one title can coexist, and removing one preserves the other. Each season can be a distinct follow target.
@@ -109,16 +110,20 @@ Environment variables currently consumed:
 - `TMDB_TOKEN`.
 - Optional privileged `APP_TOKEN` for server-to-server access; it bypasses browser login. Leave unset unless needed and never expose in frontend config.
 
-The app does **not** automatically load `.env` files. Configure shell/runtime secrets, or deliberately add an environment-loading mechanism. Do not rename/move an existing database without a migration, or the owner may appear to lose their library.
+Next.js loads its standard environment files, including `.env.local`. Import/worker scripts also optionally load `.env.local`. Production should use host-managed secrets; set launcher `HOST`/`PORT` in the shell/host environment. Do not rename/move an existing database without a migration, or the owner may appear to lose their library.
 
 ## How to run and verify
 
 ```bash
-npm start
+npm ci
+npm run build
+npm run typecheck
+npm start  # production; use npm run dev for development
 npm test
 python tests/api_smoke.py
 python tests/auth_smoke.py
 python tests/ui_smoke.py
+python tests/migration_smoke.py
 ```
 
 - `npm test`: eight passing behavioral tests for matching, timing, revisions, deduplication, corrections, and independent channel subscriptions.
@@ -130,11 +135,13 @@ python tests/ui_smoke.py
 - `npm run import -- YYYY-MM US` imports one theatrical month when TMDB credentials exist.
 - `npm run worker` runs one reminder/outbox pass.
 
-## Latest architecture discussion
+## Next.js migration — approved and completed
 
-After requesting this handoff, the user asked whether migrating to Next.js would be too much. The recommendation given was that Next.js is a reasonable next step while the app is small: React components would simplify the title popup, channel controls, forms and authentication states compared with the current HTML-string UI. The migration has **not been approved or performed**. Do not assume the question itself authorizes a rewrite.
+The user explicitly said “go ahead migrate to nextjs.” The implementation is now Next.js 16 App Router + React 19. The visual direction, owner auth, release model, SQLite path/schema, sessions, notification semantics and source adapters were retained. Do not start a second rewrite or restore the legacy UI/server.
 
-Next.js does not itself provide cross-device persistence, streaming dates or notification delivery. Preserve the release semantics, source history, channel subscriptions and tests during any approved migration. An always-on deployment can retain durable SQLite; serverless deployment requires compatible persistent storage, typically a managed database. A maintained authentication solution should be evaluated instead of blindly carrying over custom authentication. Keep the chosen hosting model and data migration explicit.
+A production build and strict TypeScript checks pass. The eight model tests and production HTTP/auth/browser tests pass. `tests/migration_smoke.py` creates an existing-format library with an owner, session, follow, settings, manual revision and queued notification; the Next.js server preserves all of them without account recreation or schema reset. Existing sessions work because the cookie/table formats remain unchanged.
+
+Authentication remains the tested single-owner implementation for this framework migration; no authentication-provider migration was performed. Next.js itself does not supply data feeds, persistent hosting or external notification delivery. The remaining integration limits above still apply. Do not deploy local SQLite to an ephemeral serverless filesystem.
 
 ## Suggested next work
 
@@ -151,4 +158,4 @@ If the user steers the work differently, follow the latest instruction. They pre
 
 ## Starter prompt for the next session
 
-> Continue building Lineup from the current repository. Read HANDOFF.md, README.md, DEPLOYMENT.md, and RESEARCH.md first. Preserve the minimal near-black/white/lilac interface and poster-led title popup with independent per-channel notification bells. Review the implemented login and persistence before extending anything. Report the next useful step and then implement it, keeping unfinished live data, external delivery, and deployment limits explicit.
+> Continue building Lineup from the current repository. Read HANDOFF.md, README.md, DEPLOYMENT.md, and RESEARCH.md first. Continue the existing Next.js implementation. Preserve the minimal near-black/white/lilac interface and poster-led title popup with independent per-channel notification bells. Review the implemented login and persistence before extending anything. Report the next useful step and then implement it, keeping unfinished live data, external delivery, and deployment limits explicit.

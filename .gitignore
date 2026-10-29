@@ -8,3 +8,5 @@ node_modules/
 *.sqlite-wal
 __pycache__/
 previews/
+.next/
+*.tsbuildinfo

@@ -9,7 +9,7 @@ Use one always-on Node.js 24+ web service with HTTPS and a persistent disk, for 
 For Render:
 
 1. Put this source in a private Git repository and create a Node web service from it.
-2. Use Node.js 24+, build command `node --version`, and start command `npm start`. No dependencies need installation.
+2. Use Node.js 24+, build command `npm ci && npm run build`, and start command `npm start`. This runs the Next.js production server; keep the built `.next` output and installed dependencies on the service.
 3. Attach a persistent disk at `/var/data`.
 4. Configure the environment below. Render supplies `PORT`; do not hardcode it.
 5. On the **first deployment**, protect setup with a temporary secret `SETUP_KEY`. Open Lineup, enter this setup key, and create your owner account. No further accounts can be created.
@@ -55,10 +55,16 @@ The Resend delivery adapter is **not implemented yet**. Planned server configura
 
 ## Login behavior
 
-The first account adopts this personal instance's existing library. Passwords are salted and hashed with scrypt. Login uses opaque, HTTP-only, SameSite cookies with a 30-day expiry; only hashes of session tokens are stored. Failed logins are rate-limited. Sign-out revokes the current session. Changing the password revokes other device sessions.
+The first account adopts this personal instance's existing library. Passwords are salted and hashed with scrypt. Login uses opaque, HTTP-only, SameSite cookies with a 30-day expiry; only hashes of session tokens are stored. Failed logins share a single-owner rate-limit bucket across clients, avoiding reliance on untrusted forwarded IP headers. Sign-out revokes the current session. Changing the password revokes other device sessions.
 
 There is no email verification or email-based forgotten-password reset yet. No third-party authentication service is required. Keep a database backup and use a password manager for the owner account.
 
 ## Current deployment status
 
-The app is implemented and tested locally. No public server, domain, persistent hosted disk, streaming feed account, or notification sender has been provisioned in this session. The login alone does not make a local server reachable from other devices.
+The app has been migrated to Next.js 16/React 19 and tested locally, including opening existing SQLite records and session cookies without a data reset. No public server, domain, persistent hosted disk, streaming feed account, or notification sender has been provisioned in this session. The login alone does not make a local server reachable from other devices.
+
+## Upgrading from the original Node application
+
+Stop the old service and take a WAL-safe database backup. Keep the same `DB_PATH`, runtime secrets, hostname, and cookie settings. Run `npm ci`, `npm run build`, then `npm start`. No database schema migration or account recreation is required for this conversion; existing-format library and session compatibility are covered by `tests/migration_smoke.py`. Do not deploy the SQLite file into ephemeral build output or use a static export. The API route requires the Node.js runtime.
+
+Locally, Next.js reads `.env.local` and standard environment files. Production hosting secrets are preferred. The importer/worker scripts read `.env.local` if present; hosting environment variables take precedence. Set the production launcher's `HOST`/`PORT` in the shell or dashboard, not only inside a Next.js env file.

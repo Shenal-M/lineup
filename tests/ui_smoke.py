@@ -4,9 +4,9 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 (ROOT/'previews').mkdir(exist_ok=True)
 with tempfile.TemporaryDirectory() as tmp:
-    server=subprocess.Popen(['node','src/server.ts'],cwd=ROOT,env=dict(os.environ,PORT='3098',DB_PATH=tmp+'/db.sqlite'),stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+    server=subprocess.Popen(['node','scripts/start.mjs'],cwd=ROOT,env=dict(os.environ,PORT='3098',DB_PATH=tmp+'/db.sqlite'),stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
     try:
-        for _ in range(40):
+        for _ in range(150):
             try:urllib.request.urlopen('http://127.0.0.1:3098/');break
             except OSError:time.sleep(.1)
         with sync_playwright() as p:
@@ -54,11 +54,30 @@ with tempfile.TemporaryDirectory() as tmp:
             page.screenshot(path=str(ROOT/'previews'/'lineup-title-details.png'),full_page=False)
             page.set_viewport_size({'width':390,'height':844})
             page.screenshot(path=str(ROOT/'previews'/'lineup-title-mobile.png'),full_page=False)
-            assert page.locator('#detail').evaluate('(el)=>el.scrollWidth<=el.clientWidth')
+            assert page.locator('.title-dialog').evaluate('(el)=>el.scrollWidth<=el.clientWidth')
             page.get_by_role('button',name='Close details').click()
             page.set_viewport_size({'width':1440,'height':1050})
             page.screenshot(path=str(ROOT/'previews'/'lineup-upcoming.png'),full_page=True)
-            page.goto('http://127.0.0.1:3098/#settings',wait_until='networkidle')
+            page.get_by_role('button',name='View The Odyssey',exact=True).click()
+            page.locator('.release-sources summary').click()
+            page.get_by_role('button',name='+ Add release date',exact=True).click()
+            page.get_by_label('Service (optional)',exact=True).fill('Netflix')
+            page.get_by_label('Precision',exact=True).select_option('day')
+            page.get_by_label('Date / start of period',exact=True).fill('2027-01-08')
+            page.get_by_label('Source note *',exact=True).fill('Browser test announcement')
+            page.get_by_label('Announcement URL',exact=True).fill('https://example.com/announcement')
+            page.get_by_role('button',name='Save release',exact=True).click()
+            page.get_by_role('button',name='Notifications for Netflix',exact=True).wait_for()
+            assert page.locator('.channel-row').filter(has=page.get_by_role('button',name='Notifications for Netflix',exact=True)).inner_text().find('Jan 8')>=0
+            page.get_by_role('button',name='Close details').click()
+            page.goto('http://127.0.0.1:3098/settings',wait_until='networkidle')
+            page.get_by_label('Reminder timezone',exact=True).select_option('UTC')
+            page.get_by_label('Reminder hour (24-hour)',exact=True).fill('10')
+            page.get_by_role('button',name='Save preferences',exact=True).click()
+            page.get_by_role('status').filter(has_text='Preferences saved').wait_for()
+            page.reload(wait_until='networkidle')
+            assert page.get_by_label('Reminder timezone',exact=True).input_value()=='UTC'
+            assert page.get_by_label('Reminder hour (24-hour)',exact=True).input_value()=='10'
             page.get_by_role('button',name='Sign out',exact=True).click()
             page.get_by_role('heading',name='Welcome back.').wait_for()
             page.reload(wait_until='networkidle')

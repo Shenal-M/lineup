@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory() as tmp:
     env = dict(os.environ, PORT='3097', DB_PATH=tmp+'/db.sqlite', APP_TOKEN='integration-test-token')
-    server = subprocess.Popen(['node', 'src/server.ts'], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    server = subprocess.Popen(['node', 'scripts/start.mjs'], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     def request(path, method='GET', data=None, auth=True):
         headers = {'Content-Type':'application/json'}
         if auth: headers['Authorization']='Bearer integration-test-token'
@@ -13,14 +13,15 @@ with tempfile.TemporaryDirectory() as tmp:
     def api(path, method='GET', data=None):
         return json.load(request('/api/'+path,method,data))
     try:
-        for _ in range(50):
+        for _ in range(150):
             try:
                 assert request('/').status==200
                 break
             except OSError: time.sleep(.1)
         else: raise RuntimeError('Server did not start: '+server.stderr.read().decode())
-        assert request('/app.js').status==200
-        assert request('/style.css').status==200
+        assert request('/search').status==200
+        assert request('/following').status==200
+        assert request('/settings').status==200
         try:
             request('/api/state', auth=False)
             raise AssertionError('Missing authentication was accepted')

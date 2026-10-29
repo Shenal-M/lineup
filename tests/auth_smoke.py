@@ -5,8 +5,8 @@ ROOT=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory() as tmp:
     env=dict(os.environ,PORT='3099',DB_PATH=tmp+'/lineup.sqlite',APP_TOKEN='',SETUP_KEY='test-setup-key')
     def start():
-        p=subprocess.Popen(['node','src/server.ts'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
-        for _ in range(40):
+        p=subprocess.Popen(['node','scripts/start.mjs'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+        for _ in range(150):
             try:urllib.request.urlopen('http://127.0.0.1:3099/');return p
             except OSError:time.sleep(.1)
         raise AssertionError('Auth server did not start')

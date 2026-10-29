@@ -4,9 +4,17 @@ A minimal personal movie and TV release tracker: near-black surfaces, white type
 
 ## Start
 
-Requires Node.js 24+. No package installation is needed.
+Requires Node.js 24+. Lineup now uses Next.js 16 App Router, React 19, and TypeScript. The server runs in the Node.js runtime with durable SQLite storage.
 
 ```bash
+npm ci
+npm run dev
+```
+
+For production:
+
+```bash
+npm run build
 npm start
 ```
 
@@ -23,13 +31,13 @@ For access from other devices, deploy one HTTPS instance with a persistent disk 
 - Notification rules and source/date corrections under expandable sections.
 - First-run owner setup; email/password sign-in; 30-day HTTP-only session cookies; sign-out and password change. Passwords use salted scrypt; session tokens are stored only as hashes. Failed sign-ins are rate-limited.
 - Durable follows, observations, manual corrections, material release revisions, notification deduplication and supersession of stale queued alerts.
-- In-app reminders for date announcements/changes and optional 7-day, 1-day and release-day alerts. The server checks every minute and on state requests.
+- In-app reminders for date announcements/changes and optional 7-day, 1-day and release-day alerts. The Node.js runtime starts a single reminder timer on first API access, checking every minute while the process remains alive and on state requests.
 - Server-side TMDB integration for live title search, posters, metadata, series seasons, episodes and regional theatrical import. Each season is a distinct follow target. Original air dates do not automatically become regional streaming premieres.
 - No playback or provider storefront links.
 
 ## Configuration
 
-Copy the values you need from [.env.example](.env.example) to your hosting secrets or shell environment. The server does not automatically load `.env` files.
+Copy [.env.example](.env.example) to `.env.local` for local development, or configure secrets in your hosting environment. Next.js loads its standard environment files; the CLI worker/import scripts also read `.env.local` if present. Set `HOST`/`PORT` for the production launcher in your shell or host dashboard. Never change an existing `DB_PATH` without moving/backing up its database.
 
 | Variable | Default / use |
 |---|---|
@@ -63,23 +71,32 @@ npm run worker                # one reminder/outbox pass
 ## Checks
 
 ```bash
+npm run typecheck
+npm run build
 npm test
 python tests/api_smoke.py
 python tests/auth_smoke.py
 python tests/ui_smoke.py
+python tests/migration_smoke.py
 ```
 
-The eight behavior tests cover event matching, date-only/Colombo timing, unknown-date follows, revisions, corrections, deduplication and independent service follows. HTTP tests cover protected routes, source editing, preferences and channel subscriptions. Authentication tests verify two-client persistence, server restarts, session revocation and rate limiting. Browser tests use Playwright and an installed Chromium to check sign-up/sign-in, cross-client follow persistence, popup actions, mobile sizing and sign-out. They use isolated temporary databases, not the owner's library. Browser dependencies are only needed to run the browser checks.
+Build the production app before running the Python integration checks; they launch isolated `next start` instances.
+
+The eight behavior tests cover event matching, date-only/Colombo timing, unknown-date follows, revisions, corrections, deduplication and independent service follows. HTTP tests cover protected routes, source editing, preferences and channel subscriptions. Authentication tests verify two-client persistence, server restarts, session revocation and rate limiting. Browser tests use Playwright and an installed Chromium to check sign-up/sign-in, cross-client follow persistence, popup actions, mobile sizing and sign-out. They use isolated temporary databases, not the owner's library. Browser dependencies are only needed to run the browser checks. The migration test verifies an existing-format library and session are accepted without database/schema reset.
 
 ## Source
 
-- `public/`: responsive UI and login screens.
+- `app/`: App Router pages, global styles, and Node.js API route handler.
+- `src/components/`: typed React screens, login, title popup, channel controls, and forms.
+- `src/lib/api.ts`, `src/lib/runtime.ts`: API dispatch and the singleton SQLite/auth/reminder runtime.
 - `src/auth.ts`: owner account, hashed credentials, cookie sessions and rate limits.
 - `src/model.ts`, `src/store.ts`: release semantics, SQLite persistence and outbox.
-- `src/server.ts`: API and static server.
+- `scripts/start.mjs`: production Next.js launcher respecting `HOST` and `PORT`.
 - `src/providers.ts`: TMDB adapter and TVmaze observation scaffold.
 - `src/seed.ts`: illustrative catalogue.
 - `tests/`: behavior, API, authentication and browser checks.
 - [RESEARCH.md](RESEARCH.md): original product research.
 
-Sites publishing helpers were absent from the workspace. This build is a local Node application, not a published Site. The research's provider/event/subscription separation is retained while using native TypeScript and SQLite to avoid dependency downloads.
+The Next.js migration preserves the existing database filename, owner/session tables, release semantics and notification behavior. The legacy static UI and custom HTTP server have been removed. Production hosting still requires one always-on Node.js instance with a persistent disk; this SQLite build is not suitable for ephemeral serverless filesystems. No Site or public deployment has been provisioned.
+
+See [HANDOFF.md](HANDOFF.md) for product decisions and remaining integrations.
