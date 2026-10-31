@@ -97,23 +97,59 @@ dialog form > .primary {
   letter-spacing: -0.025em;
   overflow-wrap: anywhere;
 }
-.sample-badge {
-  flex: none;
-  padding: 1px 6px;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  font: 500 10px/1.5 var(--mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-3);
-}
 .title-meta {
   margin-top: 6px;
   font-size: 13px;
   color: var(--text-3);
 }
-.season-pick {
+/* The show's network, as a muted white mark under the title. */
+.title-network {
+  display: flex;
+  align-items: center;
+  min-height: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.title-network .service-logo {
+  height: 15px;
+  max-width: 96px;
+  opacity: 0.72;
+}
+/* Season picker and external links share one row of compact controls. */
+.title-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-top: 12px;
+}
+.season-pick {
+  min-width: 0;
+  max-width: 100%;
+}
+.imdb-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  text-decoration: none;
+  transition: var(--t-hover);
+}
+.imdb-link svg {
+  color: var(--text-3);
+}
+.imdb-link:focus-visible {
+  outline: none;
+  border-color: var(--ring);
 }
 #season-number {
   width: auto;
@@ -180,35 +216,44 @@ dialog form > .primary {
 .channel-row > .bell-toggle {
   grid-column: -2;
 }
-.channel-mark {
+/* Muted medium icon: cinema, streaming or digital. */
+.channel-icon {
   display: grid;
-  place-items: center;
+  place-items: center start;
   width: 20px;
   height: 20px;
-  border-radius: 5px;
-  background: var(--surface-3);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
   color: var(--text-2);
 }
-.channel-mark.is-dot {
-  background: none;
-}
-.channel-mark.is-dot::after {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--streaming);
-}
-.channel-mark.is-dot.theatrical::after {
-  background: var(--theatrical);
+/* Extra-service rows have no icon: the logo starts at the icon column. */
+.channel-list.is-compact .channel-row {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 .channel-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text);
+}
+/* Network logos rendered as flat white marks, whatever their brand colours. */
+.service-logo {
+  height: 16px;
+  width: auto;
+  max-width: 88px;
+  object-fit: contain;
+  object-position: left center;
+  filter: brightness(0) invert(1);
+  opacity: 0.92;
+}
+.service-logo.is-small {
+  height: 12px;
+  max-width: 64px;
+  opacity: 0.6;
+}
+.channel-via {
+  font-size: 13px;
+  color: var(--text-3);
 }
 .channel-dates {
   display: flex;
@@ -234,7 +279,7 @@ dialog form > .primary {
   color: var(--text-3);
 }
 
-/* Bell toggle: icon-only; amber when following. */
+/* Bell toggle: icon-only; accent when following. */
 .bell-toggle {
   width: 32px;
   height: 32px;
@@ -389,6 +434,10 @@ dialog form > .primary {
   .add-date:hover:not(:disabled) {
     color: var(--text);
   }
+  .imdb-link:hover {
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
   .bell-toggle:hover:not(:disabled):not(.is-on) {
     background: var(--surface-2);
     color: var(--text);
@@ -472,12 +521,21 @@ dialog form > .primary {
      (flexible) row absorbs the rest instead of spacing them apart. */
   .title-overview {
     grid-template-columns: 96px minmax(0, 1fr);
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto auto auto 1fr;
     gap: 0 14px;
   }
   #season-number {
     height: 36px;
     font-size: 16px;
+  }
+  .imdb-link {
+    height: 36px;
+  }
+  .title-network {
+    margin-top: 6px;
+  }
+  .title-network .service-logo {
+    height: 14px;
   }
   .title-dialog h2 {
     font-size: 18px;
@@ -491,8 +549,9 @@ dialog form > .primary {
     display: contents;
   }
   .title-head,
+  .title-network,
   .title-meta,
-  .season-pick {
+  .title-actions {
     grid-column: 2;
   }
   .title-head {
@@ -514,7 +573,7 @@ dialog form > .primary {
     margin-top: 4px;
   }
   .detail-poster {
-    grid-row: 1 / span 3;
+    grid-row: 1 / span 4;
   }
   .detail-poster .poster-art {
     inset: 8px 8px auto;
@@ -543,6 +602,7 @@ dialog form > .primary {
     animation: none;
   }
   .bell-toggle,
+  .imdb-link,
   .detail-more > summary {
     transition: none;
   }

@@ -26,13 +26,14 @@ aside {
   padding: 0 8px;
   border-radius: var(--r-control);
 }
-nav {
+aside nav {
   flex: 1;
+  min-height: 0; /* lets the Tracking panel shrink and scroll */
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-nav a {
+aside nav a {
   position: relative;
   display: flex;
   align-items: center;
@@ -47,19 +48,19 @@ nav a {
     var(--t-hover),
     transform 100ms var(--ease-out);
 }
-nav a .icon {
+aside nav a .icon {
   color: var(--text-3);
   transition: color 120ms var(--ease-out);
 }
-nav a.active {
+aside nav a.active {
   background: var(--surface-2);
   color: var(--text);
 }
-nav a.active .icon {
+aside nav a.active .icon {
   color: var(--text);
 }
 /* Amber indicator: always present, revealed on the active item. */
-nav a::before {
+aside nav a::before {
   content: "";
   position: absolute;
   left: -12px;
@@ -74,14 +75,14 @@ nav a::before {
     opacity 150ms var(--ease-out),
     transform 150ms var(--ease-out);
 }
-nav a.active::before {
+aside nav a.active::before {
   opacity: 1;
   transform: none;
 }
-nav a:active {
+aside nav a:active {
   transform: scale(0.98);
 }
-nav b {
+aside nav b {
   margin-left: auto;
   font: 500 12px var(--mono);
   font-variant-numeric: tabular-nums;
@@ -94,6 +95,133 @@ nav b {
 }
 .aside-bottom {
   margin-top: 8px;
+}
+
+/* Tracking panel: followed titles between the pages and Settings. It shrinks
+   to fit the rail and scrolls on its own, keeping Settings and the profile in
+   view. Hidden on mobile, where the rail becomes the tab bar. */
+.tracking {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 24px 0 8px;
+}
+.tracking-label {
+  margin: 0;
+  padding: 0 10px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.tracking-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.tracking-group + .tracking-group {
+  margin-top: 10px;
+}
+.tracking-group h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.tracking-group h3 span {
+  font: 500 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.tracking-group ul {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tracking-item {
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 0;
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 400;
+  text-align: left;
+}
+.tracking-item:active:not(:disabled) {
+  transform: none;
+  background: var(--surface-1);
+}
+/* Inside the scroller an outset ring would be clipped. */
+.tracking-item:focus-visible {
+  outline-offset: -2px;
+}
+.tracking-item.active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.tracking-thumb {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tracking-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.tracking-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tracking-name,
+.tracking-date {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tracking-name {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.tracking-date {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.tracking-empty {
+  margin: 0;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* Following page: Movies and TV shows sections. */
+.following-group + .following-group {
+  margin-top: 28px;
 }
 .profile {
   display: flex;
@@ -199,13 +327,20 @@ header {
   padding: 32px 0 64px;
 }
 @media (hover: hover) {
-  nav a:hover:not(.active) {
+  aside nav a:hover:not(.active) {
     background: var(--surface-1);
     color: var(--text);
   }
   .market:hover {
     border-color: var(--border-strong);
     color: var(--text);
+  }
+  button.tracking-item:hover:not(:disabled) {
+    background: var(--surface-1);
+    color: var(--text);
+  }
+  button.tracking-item.active:hover:not(:disabled) {
+    background: var(--surface-2);
   }
 }
 
@@ -220,22 +355,10 @@ header {
   color: var(--text);
 }
 .brand-mark {
-  display: flex;
-  flex-direction: column;
-  gap: 2.5px;
-  width: 15px;
-}
-.brand-mark i {
-  height: 3px;
-  border-radius: 1px;
-  background: var(--text);
-}
-.brand-mark i:nth-child(2) {
-  width: 70%;
-}
-.brand-mark i:nth-child(3) {
-  width: 42%;
-  background: var(--accent);
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: -2px -4px -2px -2px; /* the lobes don't fill their square */
 }
 
 /* Lists inside dialogs (inbox, dates TBA) */
@@ -340,7 +463,8 @@ button.sheet-item:active:not(:disabled) {
     margin: 0 0 0 -8px;
   }
   .aside-bottom,
-  nav b {
+  .tracking,
+  aside nav b {
     display: none;
   }
   header {
@@ -378,7 +502,7 @@ button.sheet-item:active:not(:disabled) {
   }
 
   /* Bottom tab bar */
-  nav {
+  aside nav {
     position: fixed;
     inset: auto 0 0;
     z-index: 20;
@@ -394,7 +518,7 @@ button.sheet-item:active:not(:disabled) {
   .settings-link {
     margin-top: 0;
   }
-  nav a {
+  aside nav a {
     flex: 1;
     flex-direction: column;
     justify-content: center;
@@ -406,15 +530,15 @@ button.sheet-item:active:not(:disabled) {
     font-size: 11px;
     -webkit-tap-highlight-color: transparent;
   }
-  nav a .icon {
+  aside nav a .icon {
     width: 20px;
     height: 20px;
   }
-  nav a.active {
+  aside nav a.active {
     background: transparent;
     color: var(--text);
   }
-  nav a::before {
+  aside nav a::before {
     inset: 0 auto auto 50%;
     width: 16px;
     height: 2px;
@@ -422,7 +546,7 @@ button.sheet-item:active:not(:disabled) {
     border-radius: 0 0 2px 2px;
     transform: scaleX(0.4);
   }
-  nav a:active {
+  aside nav a:active {
     transform: scale(0.96);
   }
   main {
@@ -437,11 +561,11 @@ button.sheet-item:active:not(:disabled) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  nav a,
-  nav a::before {
+  aside nav a,
+  aside nav a::before {
     transition: none;
   }
-  nav a:active {
+  aside nav a:active {
     transform: none;
   }
 }

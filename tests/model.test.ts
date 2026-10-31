@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import {matches,due,dayInZone,type Release,type Subscription} from '../src/model.ts';
 const event:Release={id:'r',titleId:'t',market:'US',medium:'streaming',service:'Netflix',offer:'subscription',date:'2026-11-13',precision:'day',status:'announced',source:'Official announcement',sourceUrl:'https://example.com',revision:1};
 const sub:Subscription={id:'s',titleId:'t',market:'US',medium:'streaming',services:[],rules:['announced','changed','week','day','release']};
+test('a digital follow matches the digital date, whatever the service',()=>{
+ assert.equal(matches({...sub,medium:'digital'},{...event,medium:'digital',offer:'digital',service:'Prime Video'}),true);
+ assert.equal(matches({...sub,medium:'digital'},{...event,medium:'digital',offer:'digital',service:null}),true);
+ assert.equal(matches({...sub,medium:'theatrical'},{...event,medium:'digital',offer:'digital'}),false);
+});
 test('follows match category, market, offer and selected service',()=>{
  assert.equal(matches(sub,event),true);
  for(const change of [{medium:'theatrical'},{market:'GB'},{offer:'rent'},{titleId:'other'}])assert.equal(matches(sub,{...event,...change} as Release),false);

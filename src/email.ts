@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { matches } from "./model.ts";
 import { lit, type Store } from "./postgres-store.ts";
+import { renderReminder } from "./email-template.ts";
 export function emailConfigured() {
   return !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 }
@@ -9,31 +10,23 @@ export async function sendReminder(
   title: any,
   recipient: string,
   fetcher = fetch,
+  release?: any,
 ) {
   if (!emailConfigured())
     throw Error("Configure RESEND_API_KEY and EMAIL_FROM for email delivery.");
-  const labels: Record<string, string> = {
-    announced: "Release date announced",
-    changed: "Release updated",
-    week: "Coming in one week",
-    day: "Coming tomorrow",
-    release: "Releasing today",
-  };
-  const subject = `${title?.demo ? "[Sample] " : ""}${labels[notification.kind] || "Release reminder"}: ${title?.name || "Your followed title"}`;
+  const { subject, html, text, attachments } = renderReminder({
+    notification,
+    title,
+    release,
+    appUrl: process.env.APP_URL || undefined,
+  });
   const payload = JSON.stringify({
     from: process.env.EMAIL_FROM,
     to: [recipient],
     subject,
-    text: [
-      subject,
-      `${notification.service || notification.medium} · ${notification.date || "Date to be announced"}`,
-      title?.demo
-        ? "Illustrative sample data; this is not verified release information."
-        : "",
-      "Manage your follows and reminder rules in Lineup.",
-    ]
-      .filter(Boolean)
-      .join("\n\n"),
+    html,
+    text,
+    attachments,
   });
   const result = await fetcher("https://api.resend.com/emails", {
     method: "POST",
@@ -106,7 +99,7 @@ export async function deliverEmails(store: Store, fetcher = fetch) {
           !sub.rules.includes(n.kind)
         )
           suppressed.push(n.id);
-        else send.push({ n, title, owner });
+        else send.push({ n, title, owner, release });
       }
       counts.review += review.length;
       const ids = (xs: string[]) => xs.map(lit).join(",");
@@ -126,9 +119,9 @@ export async function deliverEmails(store: Store, fetcher = fetch) {
       };
     },
   );
-  for (const { n, title, owner } of claimed) {
+  for (const { n, title, owner, release } of claimed) {
     try {
-      await sendReminder(n, title, owner, fetcher);
+      await sendReminder(n, title, owner, fetcher, release);
     } catch (error) {
       const message = (error instanceof Error ? error.message : "Send failed").slice(0, 500);
       await store.sql.unsafe(

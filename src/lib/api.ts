@@ -1,18 +1,22 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { after } from "next/server";
 import { emailConfigured } from "../email";
 import { getRuntime } from "./runtime";
 import { clientAddress } from "../auth";
 import { HttpError, ValidationError } from "../model";
 import {
   searchTMDB,
-  importTheatrical,
-  hydrateTitle,
-  hydrateSeason,
+  titleDetails,
+  seasonEpisodes,
+  upcoming,
+  isTmdbTitle,
 } from "../providers";
+import { refreshFollowed } from "../sync";
 
 const MARKETS = ["US", "GB", "LK"];
-const MEDIA = ["theatrical", "streaming"];
+const MEDIA = ["theatrical", "streaming", "digital"];
 const RULES = ["announced", "changed", "week", "day", "release"];
+const OFFERS = { theatrical: "ticket", streaming: "subscription", digital: "digital" };
 const PRECISIONS = ["day", "month", "quarter", "year", "unknown"];
 const STATUSES = ["announced", "estimated", "postponed", "cancelled", "first_observed"];
 
@@ -34,6 +38,12 @@ const describe = (e: unknown) =>
   e instanceof Error
     ? `${e.name}${(e as any).code ? ` [${(e as any).code}]` : ""}: ${e.message}`
     : String(e);
+// Work that must not delay the response (it still runs within the route's maxDuration).
+function background(task: () => Promise<unknown>) {
+  after(() =>
+    task().catch((e) => console.error("Background task failed:", describe(e))),
+  );
+}
 
 // Builds the stored release from an explicit field allowlist.
 function releaseFrom(
@@ -66,14 +76,14 @@ function releaseFrom(
     throw new ValidationError("Source must be an HTTP URL");
   if (medium === "streaming" && input.offer !== "subscription")
     throw new ValidationError("Only subscription premieres are supported");
-  const service = medium === "streaming" ? text(input.service, 60) || null : null;
+  const service = medium === "theatrical" ? null : text(input.service, 60) || null;
   return {
     id: fixed.id,
     titleId: fixed.titleId,
     market,
     medium,
     service,
-    offer: medium === "streaming" ? "subscription" : "ticket",
+    offer: OFFERS[medium as keyof typeof OFFERS],
     date,
     ...(endDate ? { endDate } : {}),
     precision,
@@ -234,48 +244,55 @@ export async function handleApi(request: Request) {
         console.error("Reminder check during state load failed:", describe(e));
       }
       const data = await store.stateData();
+      // Followed titles are re-checked against TMDB when the last check is stale.
+      background(() => refreshFollowed(store));
       return send(200, {
         ...data,
         settings: data.settings.find((x) => x.id === "user") || null,
         sources: {
           tmdb: !!process.env.TMDB_TOKEN,
-          streaming: false,
           email: emailConfigured(),
         },
       });
     }
     if (u.pathname === "/api/search" && req.method === "GET") {
       const q = (u.searchParams.get("q") || "").slice(0, 200);
-      if (!q.trim()) return send(200, []);
-      if (process.env.TMDB_TOKEN) {
-        const rows = await searchTMDB(q);
-        // One statement; richer stored titles (hydrated details) keep their fields.
-        await store.putMany("titles", rows, { merge: true });
-        return send(200, rows);
-      }
-      return send(
-        200,
-        (await store.all("titles")).filter((t) =>
-          String(t.name || "").toLowerCase().includes(q.toLowerCase()),
-        ),
-      );
+      // Search results are not stored; only following a title stores it.
+      if (!q.trim() || !process.env.TMDB_TOKEN) return send(200, []);
+      return send(200, await searchTMDB(q));
     }
-    const titleRoute = u.pathname.match(
-      /^\/api\/titles\/([^/]+)(?:\/seasons\/(\d+))?$/,
-    );
+    if (u.pathname === "/api/upcoming" && req.method === "GET") {
+      const kind = u.searchParams.get("type"),
+        market = u.searchParams.get("market") || "",
+        month = u.searchParams.get("month") || "";
+      if (
+        (kind !== "movie" && kind !== "tv") ||
+        !MARKETS.includes(market) ||
+        !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)
+      )
+        throw new ValidationError("Invalid upcoming range");
+      if (!process.env.TMDB_TOKEN) return send(200, { titles: [], releases: [] });
+      return send(200, await upcoming(kind, market, month));
+    }
+    const seasonRoute = u.pathname.match(/^\/api\/titles\/([^/]+)\/seasons\/(\d+)$/);
+    if (seasonRoute && req.method === "GET") {
+      const season = Number(seasonRoute[2]);
+      if (season < 1 || season > 100) throw new ValidationError("Invalid season");
+      return send(200, await seasonEpisodes(decode(seasonRoute[1]), season));
+    }
+    // Live TMDB details. The client shows a followed title's stored dates (they carry
+    // corrections and drive reminders); viewing one also re-checks it after the response.
+    const titleRoute = u.pathname.match(/^\/api\/titles\/([^/]+)$/);
     if (titleRoute && req.method === "GET") {
-      const season = titleRoute[2] ? Number(titleRoute[2]) : null;
-      if (season !== null && (season < 1 || season > 100))
-        throw new ValidationError("Invalid season");
-      const title = await store.get("titles", decode(titleRoute[1]));
-      if (!title) return send(404, { error: "Title not found" });
-      if (!process.env.TMDB_TOKEN || !title.tmdbId) return send(200, title);
-      const hydrated =
-        season !== null
-          ? await hydrateSeason(title, season)
-          : await hydrateTitle(title);
-      await store.put("titles", hydrated);
-      return send(200, hydrated);
+      const id = decode(titleRoute[1]);
+      const stored = await store.get("titles", id);
+      if (!process.env.TMDB_TOKEN || !isTmdbTitle(id)) {
+        if (!stored) return send(404, { error: "Title not found" });
+        return send(200, { title: stored, releases: null });
+      }
+      const live = await titleDetails(id);
+      if (stored) background(() => store.refresh([live]));
+      return send(200, live);
     }
     if (u.pathname === "/api/subscriptions" && req.method === "POST") {
       const f = followFrom(body);
@@ -285,7 +302,10 @@ export async function handleApi(request: Request) {
       const requested =
         !f.channel && typeof body.id === "string" && body.id ? body.id : null;
       const { title, sub } = await store.followContext(f.titleId, requested);
-      if (!title) throw new ValidationError("Invalid follow preferences");
+      // A title is stored when it is first followed, with its current TMDB dates.
+      if (!title && !(isTmdbTitle(f.titleId) && process.env.TMDB_TOKEN))
+        throw new ValidationError("Invalid follow preferences");
+      const entry = title ? null : await titleDetails(f.titleId);
       const id = f.channel
         ? `${base}:channel:${encodeURIComponent(f.services[0] || "any")}`
         : sub &&
@@ -294,7 +314,7 @@ export async function handleApi(request: Request) {
             sub.medium === f.medium
           ? (requested as string)
           : base;
-      await store.follow({
+      const subscription = {
         id,
         titleId: f.titleId,
         market: f.market,
@@ -304,7 +324,9 @@ export async function handleApi(request: Request) {
         ...(f.channel ? { scope: "channel" } : {}),
         // Kept from the stored subscription when it already exists (done in SQL).
         createdAt: new Date().toISOString(),
-      });
+      };
+      if (entry) await store.track(entry, subscription);
+      else await store.follow(subscription);
       return send(200, { id });
     }
     const subscriptionRoute = u.pathname.match(/^\/api\/subscriptions\/([^/]+)$/);
@@ -348,7 +370,7 @@ export async function handleApi(request: Request) {
         revision: 1,
       });
       if (!(await store.get("titles", e.titleId)))
-        throw new ValidationError("Invalid release fields");
+        throw new ValidationError("Follow the title before adding a date.");
       return send(200, await store.upsert(e as any));
     }
     const releaseRoute = u.pathname.match(/^\/api\/releases\/([^/]+)$/);
@@ -362,33 +384,6 @@ export async function handleApi(request: Request) {
         { id, titleId: e.titleId, revision: e.revision },
       );
       return send(200, await store.upsert(next as any));
-    }
-    if (u.pathname === "/api/import" && req.method === "POST") {
-      if (!MARKETS.includes(body.market) || !/^\d{4}-(0[1-9]|1[0-2])-01$/.test(body.from))
-        throw new ValidationError("Invalid import range");
-      const d = new Date(body.from + "T12:00Z");
-      d.setUTCMonth(d.getUTCMonth() + 1);
-      d.setUTCDate(0);
-      try {
-        return send(200, {
-          count: await importTheatrical(
-            store,
-            body.market,
-            body.from,
-            d.toISOString().slice(0, 10),
-          ),
-        });
-      } catch (e: unknown) {
-        await store
-          .put("health", {
-            id: "tmdb",
-            state: "error",
-            updatedAt: new Date().toISOString(),
-            note: e instanceof HttpError ? e.message : "Import failed",
-          })
-          .catch((err) => console.error("Recording import health failed:", describe(err)));
-        throw e;
-      }
     }
     if (u.pathname === "/api/notifications/read" && req.method === "POST") {
       // { ids } marks only the notifications the client displayed; no ids marks all unread.

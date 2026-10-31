@@ -13,7 +13,7 @@
   line-height: 1.5;
   color: var(--text-3);
 }
-/* Preview/sample-data notice: same quiet meta line as the heading subtitle. */
+/* Setup notice: same quiet meta line as the heading subtitle. */
 .notice {
   font-size: 13px;
   line-height: 1.5;
@@ -35,6 +35,82 @@
   }
 }
 
+/* ---------- Upcoming month strip ---------- */
+/* Selected month is the one filled pill; the current calendar month carries a
+   small dot underneath (in the pill's text colour, so it reads on both). */
+.month-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 12px -8px; /* arrow's glyph lines up with the heading */
+  scroll-margin-top: calc(var(--header) + 12px);
+}
+.month-strip {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.month-strip::-webkit-scrollbar {
+  display: none;
+}
+.month-arrow,
+.month-pill,
+.month-now {
+  flex: none;
+  height: 32px;
+  min-height: 32px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+.month-arrow {
+  width: 32px;
+  padding: 0;
+}
+.month-pill {
+  position: relative;
+  gap: 5px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.month-year {
+  font: 500 11px var(--mono);
+  color: var(--text-3);
+}
+.month-pill.current {
+  color: var(--text);
+}
+.month-pill.current::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.month-pill.active {
+  background: var(--primary);
+  color: var(--primary-ink);
+}
+.month-pill.active .month-year {
+  color: inherit;
+  opacity: 0.6;
+}
+.month-now {
+  margin-left: 6px;
+  padding: 0 12px;
+  border-color: var(--border);
+  border-radius: 999px;
+}
+
 /* ---------- Upcoming toolbar ---------- */
 .toolbar {
   display: flex;
@@ -42,29 +118,11 @@
   gap: 8px;
   margin-bottom: 20px;
 }
-.month-nav {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-right: auto;
-}
-.month-nav h2 {
-  min-width: 136px;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-.month-nav button {
-  width: 32px;
-  height: 32px;
-  min-height: 32px;
-  padding: 0;
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-2);
+.sort-toggle {
+  margin-left: auto;
 }
 .filters,
+.sort-toggle,
 .view-toggle {
   display: flex;
   gap: 2px;
@@ -74,6 +132,7 @@
   background: var(--surface-1);
 }
 .filters button,
+.sort-toggle button,
 .view-toggle button {
   min-height: 28px;
   height: 28px;
@@ -89,13 +148,17 @@
   padding: 0;
 }
 .filters button.active,
+.sort-toggle button.active,
 .view-toggle button.active {
   background: var(--surface-3);
   color: var(--text);
 }
 @media (hover: hover) {
-  .month-nav button:hover:not(:disabled),
+  .month-arrow:hover:not(:disabled),
+  .month-pill:hover:not(.active):not(:disabled),
+  .month-now:hover:not(:disabled),
   .filters button:hover:not(.active):not(:disabled),
+  .sort-toggle button:hover:not(.active):not(:disabled),
   .view-toggle button:hover:not(.active):not(:disabled) {
     background: var(--surface-2);
     color: var(--text);
@@ -133,6 +196,10 @@
   font: 600 22px/1 var(--sans);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+}
+/* Today's group (current month only): the label reads "Today" at full contrast. */
+.day.today .dow {
+  color: var(--text);
 }
 .day.month {
   font-size: 12px;
@@ -256,7 +323,8 @@
 .dot.theatrical {
   background: var(--theatrical);
 }
-.dot.streaming {
+.dot.streaming,
+.dot.digital {
   background: var(--streaming);
 }
 
@@ -271,8 +339,8 @@
   overflow: hidden;
   border: 0;
   border-radius: var(--r-poster);
-  background: var(--poster-bg, var(--surface-2));
-  color: var(--ink, var(--text-2));
+  background: var(--surface-2);
+  color: var(--text-2);
   text-align: left;
 }
 .poster::after {
@@ -362,6 +430,39 @@ button.poster {
   }
 }
 
+/* ---------- Loading ---------- */
+/* Placeholder rows while a month loads from TMDB: a slow, low-contrast pulse. */
+.loading-rows {
+  display: grid;
+  gap: 8px;
+}
+.loading-rows span {
+  height: 64px;
+  border-radius: var(--r-control);
+  background: var(--surface-1);
+  animation: loading-pulse 1.4s ease-in-out infinite;
+}
+.loading-rows span:nth-child(2) {
+  animation-delay: 120ms;
+}
+.loading-rows span:nth-child(3) {
+  animation-delay: 240ms;
+}
+.loading-rows span:nth-child(4) {
+  animation-delay: 360ms;
+}
+.loading-rows span:nth-child(5) {
+  animation-delay: 480ms;
+}
+.loading-rows.is-more {
+  margin-top: 12px;
+}
+@keyframes loading-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
 /* ---------- List motion ---------- */
 /* Month/view change: quick crossfade of the new list. */
 .releases.swap {
@@ -374,28 +475,28 @@ button.poster {
 }
 /* First mount: a barely-there stagger over the first 6 items, capped so the
    last one settles by ~260ms (this view is opened many times a day). */
-:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger) > * {
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .releases.stagger > .rows, .rows.stagger) > * {
   --i: 5;
   animation: row-in 160ms var(--ease-out) both;
   animation-delay: calc(var(--i) * 20ms);
 }
-:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .releases.stagger > .rows, .rows.stagger)
   > :nth-child(1) {
   --i: 0;
 }
-:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .releases.stagger > .rows, .rows.stagger)
   > :nth-child(2) {
   --i: 1;
 }
-:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .releases.stagger > .rows, .rows.stagger)
   > :nth-child(3) {
   --i: 2;
 }
-:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .releases.stagger > .rows, .rows.stagger)
   > :nth-child(4) {
   --i: 3;
 }
-:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .releases.stagger > .rows, .rows.stagger)
   > :nth-child(5) {
   --i: 4;
 }
@@ -403,6 +504,57 @@ button.poster {
   from {
     opacity: 0;
     transform: translateY(4px);
+  }
+}
+
+/* ---------- Month pager (under the list) ---------- */
+/* Next month is the wide, primary way on; previous is a quiet text step. */
+.month-pager {
+  display: flex;
+  gap: 8px;
+  margin-top: 24px;
+}
+.month-pager button {
+  min-height: 48px;
+  border-color: var(--border);
+  border-radius: var(--r-card);
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 400;
+}
+.month-pager .pager-prev {
+  flex: none;
+  gap: 4px;
+  padding: 0 14px 0 10px;
+}
+.month-pager .pager-next {
+  flex: 1;
+  justify-content: space-between;
+  padding: 6px 12px 6px 16px;
+  color: var(--text);
+  font-weight: 500;
+  text-align: left;
+}
+.pager-next span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.pager-next small {
+  font-weight: 400;
+  line-height: 1.3;
+}
+.month-pager .icon {
+  color: var(--text-3);
+}
+.month-pager button:active:not(:disabled) {
+  transform: scale(0.99);
+}
+@media (hover: hover) {
+  .month-pager button:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--surface-1);
+    color: var(--text);
   }
 }
 
@@ -525,21 +677,45 @@ dialog .empty {
     row-gap: 12px;
     margin-bottom: 16px;
   }
-  .month-nav {
-    margin-left: -12px;
+  /* Arrows hug the gutters; the pills scroll between them with faded edges. */
+  .month-bar {
+    margin: 0 -12px 12px;
   }
-  .month-nav button {
+  .month-arrow {
     width: 40px;
     height: 40px;
     min-height: 40px;
   }
-  .month-nav h2 {
-    min-width: 120px;
+  .month-pill,
+  .month-now {
+    height: 36px;
+    min-height: 36px;
+  }
+  .month-strip {
+    padding: 0 8px;
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 8px,
+      #000 calc(100% - 8px),
+      transparent
+    );
+  }
+  .month-now {
+    margin: 0 12px 0 2px;
+    padding: 0 10px;
+  }
+  /* Sort sits left and the layout toggle right; filters wrap below. */
+  .sort-toggle {
+    margin-left: 0;
+    margin-right: auto;
   }
   /* Invisible 40px hit areas around the compact segmented buttons. */
+  .sort-toggle button,
   .view-toggle button {
     position: relative;
   }
+  .sort-toggle button::after,
   .view-toggle button::after {
     content: "";
     position: absolute;
@@ -621,6 +797,9 @@ dialog .empty {
     min-height: 44px;
     margin-top: 16px;
   }
+  .month-pager {
+    margin-top: 20px;
+  }
   .cards {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 24px 12px;
@@ -642,7 +821,7 @@ dialog .empty {
 @media (prefers-reduced-motion: reduce) {
   .bell-swap,
   .releases.swap,
-  :is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+  :is(.releases.stagger > .agenda, .releases.stagger > .cards, .releases.stagger > .rows, .rows.stagger)
     > * {
     animation: none;
   }
@@ -655,7 +834,8 @@ dialog .empty {
   .card:hover .poster img,
   .card:has(.card-name:active) .poster,
   .follow-btn:active:not(:disabled),
-  .horizon-link:active:not(:disabled) {
+  .horizon-link:active:not(:disabled),
+  .month-pager button:active:not(:disabled) {
     transform: none;
   }
 }

@@ -1,5 +1,6 @@
-export type Medium = 'theatrical' | 'streaming';
-export type Release = { id:string; titleId:string; market:string; medium:Medium; service:string|null; offer:string; date:string|null; endDate?:string|null; precision:'day'|'month'|'quarter'|'year'|'unknown'; status:'announced'|'estimated'|'postponed'|'cancelled'|'first_observed'; source:string; sourceUrl:string; revision:number; manual?:boolean };
+// digital: the first rent/buy/VOD date (any service); streaming: a subscription premiere.
+export type Medium = 'theatrical' | 'streaming' | 'digital';
+export type Release = { id:string; titleId:string; market:string; medium:Medium; service:string|null; offer:string; date:string|null; endDate?:string|null; precision:'day'|'month'|'quarter'|'year'|'unknown'; status:'announced'|'estimated'|'postponed'|'cancelled'|'first_observed'; source:string; sourceUrl:string; revision:number; manual?:boolean; season?:number };
 export type Subscription = { id:string; titleId:string; market:string; medium:Medium; services:string[]; rules:string[] };
 export function matches(s:Subscription,e:Release) { return s.titleId===e.titleId && s.market===e.market && s.medium===e.medium && (e.medium!=='streaming'||e.offer==='subscription') && (!s.services.length || !!e.service && s.services.includes(e.service)); }
 export function material(e:Release) { return JSON.stringify([e.market,e.medium,e.service,e.offer,e.date,e.endDate||null,e.precision,e.status]); }

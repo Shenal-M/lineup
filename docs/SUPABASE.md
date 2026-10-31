@@ -26,7 +26,7 @@ Add these in Project Settings > Environment Variables for Production, then redep
 | `RESEND_API_KEY` | API key from Resend, with email sending access |
 | `EMAIL_FROM` | For example `Lineup <reminders@your-verified-domain.com>` |
 | `CRON_SECRET` | A separate long random secret for scheduled requests |
-| `TMDB_TOKEN` | Optional: TMDB read-access token for live search and manual theatrical imports |
+| `TMDB_TOKEN` | TMDB API Read Access Token: upcoming lists, search, title dates and the twice-daily re-check of followed titles |
 
 Generate SETUP_KEY and CRON_SECRET separately with `openssl rand -hex 32`. Do not share credentials in chat, commit them, or use NEXT_PUBLIC_ prefixes. APP_TOKEN is unnecessary for Vercel. Do not point preview deployments at the production database; give them an isolated database and no production email credentials.
 
@@ -51,7 +51,7 @@ Failed provider requests retry on the next invocation using a stable Resend idem
 
 The scheduler catches up missed reminder checks for up to seven days after its previous successful check. It does not backfill reminders before a new subscription existed; the initial scheduler run starts from now. Free Supabase projects may pause and all services have quotas: free plans offer no guarantee of timely delivery. Review current limits for Supabase, Vercel and Resend. Check Cron/HTTP and email logs regularly.
 
-Live release-data refresh is separate: TMDB search and manual theatrical import are supported; automatic streaming release discovery and weekly email digests are not implemented. Only dates already stored in Lineup can generate reminders. Sample-title emails are explicitly marked as samples.
+Each hourly run first re-checks followed titles against TMDB when the last check is over 12 hours old (page loads trigger the same check), so a changed date becomes a "changed" reminder. Only followed titles are stored and generate reminders. Weekly email digests are not implemented.
 
 ## Local development and verification
 

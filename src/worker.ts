@@ -1,7 +1,10 @@
 import { getRuntime } from "./lib/runtime.ts";
 import { deliverEmails, emailConfigured } from "./email.ts";
+import { refreshFollowed } from "./sync.ts";
 const { store } = await getRuntime();
 try {
+  const checked = await refreshFollowed(store, { force: true });
+  if (checked !== null) console.log(`Checked ${checked} followed titles against TMDB.`);
   await store.tick();
   console.log(
     emailConfigured()

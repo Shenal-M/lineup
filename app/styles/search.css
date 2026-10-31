@@ -1,0 +1,201 @@
+/* Search page: live suggestions combobox and the result rows. */
+
+/* ---------- Suggestions ---------- */
+/* Anchored to the whole form (input + button) so it stays usable at 390px. */
+.search-form {
+  position: relative;
+}
+.search-field.loading .icon {
+  animation: loading-pulse 1.4s ease-in-out infinite;
+}
+.suggest {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: min(480px, calc(100dvh - var(--header) - 140px));
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-card);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-modal);
+  transform-origin: top center;
+  animation: suggest-in 140ms var(--ease-out);
+}
+@keyframes suggest-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.suggest-option {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: var(--r-control);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 80ms var(--ease-out);
+}
+.suggest-option[aria-selected="true"] {
+  background: var(--surface-3);
+}
+.suggest-thumb {
+  position: relative;
+  width: 32px;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+.suggest-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.suggest-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.suggest-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.suggest-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.suggest-meta {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.suggest-followed {
+  color: var(--accent);
+}
+/* Trailing "See all results" option: one quiet line under a hairline. */
+.suggest-all {
+  grid-template-columns: 32px minmax(0, 1fr);
+  margin-top: 4px;
+  min-height: 40px;
+  color: var(--text-2);
+  position: relative;
+}
+.suggest-all::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: 8px;
+  right: 8px;
+  border-top: 1px solid var(--border);
+}
+.suggest-all .icon {
+  justify-self: center;
+  color: var(--text-3);
+}
+.suggest-all .suggest-name {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.suggest-all[aria-selected="true"] .suggest-name {
+  color: var(--text);
+}
+
+/* ---------- Result rows ---------- */
+.result-row {
+  grid-template-columns: 68px minmax(0, 1fr) auto;
+  gap: 16px;
+  padding: 8px;
+}
+.result-row .poster {
+  border-radius: 8px;
+}
+/* No-poster fallback: the title in small type, like the poster grid. */
+.result-row .poster-art {
+  display: -webkit-box;
+  inset: 8px 8px auto;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.2;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+}
+.result-row .card-name {
+  font-size: 15px;
+}
+.result-row .card-meta {
+  margin-top: 3px;
+}
+.result-date {
+  color: var(--text-2);
+}
+.result-synopsis {
+  display: -webkit-box;
+  max-width: 68ch;
+  margin-top: 6px;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-3);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 760px) {
+  .suggest-option {
+    min-height: 56px;
+    padding: 6px;
+  }
+  .suggest-all {
+    min-height: 44px;
+  }
+  .result-row {
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+  .result-row .poster-art {
+    inset: 6px 6px auto;
+    font-size: 10px;
+  }
+  .result-row .card-name {
+    font-size: 14px;
+  }
+  .result-synopsis {
+    margin-top: 4px;
+    font-size: 12px;
+  }
+}
+@media (max-width: 360px) {
+  .result-synopsis {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suggest,
+  .search-field.loading .icon {
+    animation: none;
+  }
+  .suggest-option {
+    transition: none;
+  }
+}

@@ -10,6 +10,7 @@ import {
   type Subscription,
 } from "./model.ts";
 import { SUPABASE_ROOT_CA } from "./supabase-ca.ts";
+type Entry = { title: any; releases: Release[] };
 
 // Round trips dominate latency (the database can be ~270ms away). With prepare:false
 // (required by the transaction pooler) postgres.js sends every *parameterised* query as
@@ -81,7 +82,7 @@ export function upsertRecords(
   const rows = uniqueById(values);
   if (!rows.length) return "";
   // Incoming fields win (names, posters, synopses do change), except the richer fields
-  // only title hydration provides, which a search or import must not thin out.
+  // only title details provide, which an import must not thin out.
   const merged =
     "(records.body::jsonb || excluded.body::jsonb || jsonb_strip_nulls(jsonb_build_object(" +
     "'genre', records.body::jsonb->'genre', 'seasons', records.body::jsonb->'seasons')))";
@@ -251,6 +252,11 @@ export function openPostgresStore(url: string) {
     return { statements: planStatements(plan), results };
   };
   const releaseIds = (releases: Release[]) => [...new Set(releases.map((e) => e.id))];
+  // createdAt of an existing subscription is preserved in SQL.
+  const followStatement = (s: any) =>
+    `insert into records(kind,id,body) values('subscriptions',${lit(s.id)},${json(s)}) ` +
+    `on conflict(kind,id) do update set body=jsonb_set(excluded.body::jsonb,'{createdAt}',` +
+    `coalesce(records.body::jsonb->'createdAt',excluded.body::jsonb->'createdAt'))::text`;
   // Reminder checks only need to rerun when their inputs change or time moves on.
   const tickInputs = new Set(["settings", "releases", "subscriptions"]);
   let lastTick = 0,
@@ -291,33 +297,50 @@ export function openPostgresStore(url: string) {
         result: undefined,
       }));
     },
-    // First-run sample data. Callers check existence unlocked first; this re-checks under
-    // the lock so concurrent cold starts seed once.
-    seedOnce: async (data: { titles: any[]; releases: Release[]; settings: any }) => {
+    // Default settings on first run (a concurrent cold start inserts nothing).
+    ensureSettings: async (settings: any) => {
       dirty = true;
-      await atomic(
-        releaseContext(releaseIds(data.releases)) + ` or (kind='settings' and id='user')`,
-        (rows) => ({
-          statements: rows.some((r) => r.kind === "settings")
-            ? []
-            : [
-                upsertRecords("titles", data.titles),
-                ...planAll(rows, data.releases).statements,
-                upsertRecords("settings", [data.settings]),
-              ],
-          result: undefined,
-        }),
+      await run(
+        `insert into records(kind,id,body) values('settings',${lit(settings.id)},${json(settings)}) on conflict(kind,id) do nothing`,
       );
     },
-    // Follow: createdAt of an existing subscription is preserved in SQL.
     // Locked (still one message) so a reminder check can't act on the rules it replaces.
     follow: async (s: any) => {
       dirty = true;
-      await lockedRun([
-        `insert into records(kind,id,body) values('subscriptions',${lit(s.id)},${json(s)}) ` +
-          `on conflict(kind,id) do update set body=jsonb_set(excluded.body::jsonb,'{createdAt}',` +
-          `coalesce(records.body::jsonb->'createdAt',excluded.body::jsonb->'createdAt'))::text`,
-      ]);
+      await lockedRun([followStatement(s)]);
+    },
+    // First follow of a title: stores the title and its dates with the subscription.
+    // The dates are planned against the subscriptions read before this one is added,
+    // so saving a title's current dates is a baseline, never an "announced" reminder.
+    track: async (entry: Entry, s: any) => {
+      dirty = true;
+      await atomic(releaseContext(releaseIds(entry.releases)), (rows) => ({
+        statements: [
+          upsertRecords("titles", [entry.title]),
+          ...planAll(rows, entry.releases).statements,
+          followStatement(s),
+        ],
+        result: undefined,
+      }));
+    },
+    // Re-checked dates of followed titles (2 round trips). Changes become observations
+    // and "changed"/"announced" reminders; titles unfollowed meanwhile are skipped.
+    refresh: async (entries: Entry[]) => {
+      dirty = true;
+      const ids = releaseIds(entries.flatMap((e) => e.releases));
+      return atomic(releaseContext(ids) + ` or kind='titles'`, (rows) => {
+        const stored = new Set(
+          rows.filter((r) => r.kind === "titles").map((r) => JSON.parse(r.body).id),
+        );
+        const live = entries.filter((e) => stored.has(e.title.id));
+        return {
+          statements: [
+            upsertRecords("titles", live.map((e) => e.title)),
+            ...planAll(rows, live.flatMap((e) => e.releases)).statements,
+          ],
+          result: live.length,
+        };
+      });
     },
     // Title existence and the subscription a follow request refers to, in one round trip.
     followContext: async (titleId: string, subscriptionId: string | null) => {
@@ -327,11 +350,17 @@ export function openPostgresStore(url: string) {
       );
       return { title: !!row.title, sub: row.sub ? JSON.parse(row.sub) : null };
     },
+    // The last unfollow of a title also deletes the title, its dates and their history
+    // (notifications keep the title's name). One statement: every part sees the rows as
+    // they were before the subscription is deleted, hence `s.id<>id`.
     unfollow: async (id: string) => {
       dirty = true;
       await lockedRun([
-        `with d as (delete from records where kind='subscriptions' and id=${lit(id)}) ` +
-          `update outbox set state='superseded' where state='pending' and body::jsonb->>'subscriptionId'=${lit(id)}`,
+        `with d as (delete from records where kind='subscriptions' and id=${lit(id)} returning body::jsonb->>'titleId' as title), ` +
+          `o as (update outbox set state='superseded' where state='pending' and body::jsonb->>'subscriptionId'=${lit(id)}) ` +
+          `delete from records r using d where ((r.kind='titles' and r.id=d.title) or ` +
+          `(r.kind in ('releases','observations') and r.body::jsonb->>'titleId'=d.title)) and not exists(` +
+          `select 1 from records s where s.kind='subscriptions' and s.id<>${lit(id)} and s.body::jsonb->>'titleId'=d.title)`,
       ]);
     },
     // One statement: the given notifications, or every unread one when ids is omitted.
@@ -411,14 +440,17 @@ export function openPostgresStore(url: string) {
                   enqueue.push(outboxRow(s, e, kind, now));
               }
         const isValid = valid.length
-          ? `(body::jsonb->>'subscriptionId', event_id, body::jsonb->>'kind', revision) in (values ${valid.join(",")})`
+          ? `(outbox.body::jsonb->>'subscriptionId', outbox.event_id, outbox.body::jsonb->>'kind', outbox.revision) in (values ${valid.join(",")})`
           : "false";
         return {
           statements: [
             enqueueRows(enqueue),
             // Deliver valid pending rows (existing notifications keep their read flag),
             // then settle every pending row as delivered or superseded.
-            `insert into records(kind,id,body) select 'notifications', id, (body::jsonb || '{"read":false}')::text from outbox where state='pending' and ${isValid} on conflict(kind,id) do nothing`,
+            // The title's name is copied so the notification outlives an unfollow.
+            `insert into records(kind,id,body) select 'notifications', outbox.id, (outbox.body::jsonb || jsonb_build_object('read', false, 'titleName', t.body::jsonb->>'name'))::text ` +
+              `from outbox left join records t on t.kind='titles' and t.id=outbox.body::jsonb->>'titleId' ` +
+              `where outbox.state='pending' and ${isValid} on conflict(kind,id) do nothing`,
             `update outbox set state=case when ${isValid} then 'delivered' else 'superseded' end where state='pending'`,
             upsertRecords("health", [{ id: "scheduler", state: "ok", updatedAt: now.toISOString() }]),
           ],

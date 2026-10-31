@@ -22,10 +22,10 @@
 
   --primary: #ededef;
   --primary-ink: #0a0a0b;
-  --accent: #e9b949;
-  --accent-soft: rgba(233, 185, 73, 0.12);
-  --accent-hover: rgba(233, 185, 73, 0.18);
-  --accent-line: rgba(233, 185, 73, 0.28);
+  --accent: #bef264;
+  --accent-soft: rgba(190, 242, 100, 0.12);
+  --accent-hover: rgba(190, 242, 100, 0.18);
+  --accent-line: rgba(190, 242, 100, 0.28);
   --theatrical: #f28b66;
   --streaming: #6cb8f0;
   --danger: #f26d6d;

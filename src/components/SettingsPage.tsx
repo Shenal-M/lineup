@@ -5,7 +5,6 @@ import { api, countries, type State, type User } from "./types";
 type Props = {
   state: State;
   user: User;
-  month: Date;
   refresh: () => Promise<State>;
   onSignOut: () => Promise<void>;
   openInbox: () => Promise<void>;
@@ -14,12 +13,12 @@ type Props = {
 };
 type Tone = "on" | "off" | "error";
 const healthNames: Record<string, string> = {
-  tmdb: "TMDB import",
+  tmdb: "TMDB check",
   scheduler: "Reminder scheduler",
 };
 // Quiet one-liners for healthy background jobs.
 const healthDone: Record<string, string> = {
-  tmdb: "Last TMDB import",
+  tmdb: "Followed titles checked",
   scheduler: "Reminders checked",
 };
 const hours = Array.from({ length: 24 }, (_, h) => [
@@ -57,7 +56,6 @@ function when(iso: string) {
 export function SettingsPage({
   state,
   user,
-  month,
   refresh,
   onSignOut,
   openInbox,
@@ -100,22 +98,6 @@ export function SettingsPage({
       setBusy("");
     }
   }
-  async function importDates() {
-    setBusy("import");
-    try {
-      const r = await api<{ count: number }>("import", "POST", {
-        market: state.settings.market,
-        from: `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-01`,
-      });
-      await refresh();
-      notify(`Imported ${r.count} regional release events`);
-    } catch (error) {
-      await refresh().catch(() => {});
-      onError(error);
-    } finally {
-      setBusy("");
-    }
-  }
   const timezones = [
     ...new Set([
       "Asia/Colombo",
@@ -129,10 +111,6 @@ export function SettingsPage({
   // Failures get a full row; healthy jobs collapse into one quiet line.
   const failing = state.health.filter((h) => h.state === "error"),
     quiet = state.health.filter((h) => h.state !== "error");
-  const monthLabel = month.toLocaleDateString("en-US", {
-    month: "short",
-    year: "numeric",
-  });
   return (
     <>
       <Heading title="Settings" />
@@ -214,21 +192,12 @@ export function SettingsPage({
                 <span className="settings-name">TMDB</span>
                 <small>
                   {state.sources.tmdb
-                    ? "Catalogue and theatrical dates."
+                    ? "Search, upcoming releases and dates. Followed titles are re-checked twice a day."
                     : "Set TMDB_TOKEN on the server to enable."}
                 </small>
               </div>
               <Status tone={state.sources.tmdb ? "on" : "off"}>
                 {state.sources.tmdb ? "Connected" : "Not connected"}
-              </Status>
-            </li>
-            <li className="settings-row">
-              <div className="settings-label">
-                <span className="settings-name">Streaming feed</span>
-                <small>Add streaming dates manually in a title’s details.</small>
-              </div>
-              <Status tone={state.sources.streaming ? "on" : "off"}>
-                {state.sources.streaming ? "Connected" : "Not connected"}
               </Status>
             </li>
             <li className="settings-row">
@@ -260,20 +229,6 @@ export function SettingsPage({
                 </div>
               </li>
             ))}
-            <li className="settings-row">
-              <div className="settings-label">
-                <span className="settings-name">Theatrical dates</span>
-                <small>Import regional cinema releases for this month.</small>
-              </div>
-              <div className="settings-control">
-                <button
-                  disabled={!state.sources.tmdb || busy === "import"}
-                  onClick={() => void importDates()}
-                >
-                  {busy === "import" ? "Importing…" : `Import ${monthLabel}`}
-                </button>
-              </div>
-            </li>
           </ul>
           {quiet.length > 0 && (
             <p className="settings-health">

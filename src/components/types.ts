@@ -7,16 +7,21 @@ export type Title = {
   year?: number;
   genre?: string;
   synopsis?: string;
-  credit?: string;
-  poster?: string;
-  demo?: boolean;
-  ink?: string;
-  bg?: string;
-  art?: string;
-  season?: number;
-  parentId?: string;
+  poster?: string | null;
+  /** IMDb id (tt…), when TMDB knows it. */
+  imdbId?: string | null;
+  /** TMDB popularity score, for sorting upcoming lists. */
+  popularity?: number | null;
+  /** TV: the show's streaming network (else its first network) and TMDB logo. */
+  network?: { name: string; logo: string | null } | null;
   seasons?: { number: number; name: string; episodeCount: number }[];
-  episodes?: { number: number; name: string; originalAirDate?: string }[];
+};
+/** A title with its live TMDB dates in every market (null when TMDB is not connected). */
+export type Detail = { title: Title; releases: Release[] | null };
+export type Season = {
+  number: number;
+  name: string;
+  episodes: { number: number; name: string; originalAirDate?: string }[];
 };
 export type Settings = {
   id?: string;
@@ -31,6 +36,8 @@ export type Notice = {
   date: string;
   medium: string;
   service?: string;
+  /** Copied on delivery, so the notification survives an unfollow. */
+  titleName?: string;
   read: boolean;
 };
 export type State = {
@@ -40,9 +47,9 @@ export type State = {
   settings: Settings;
   notifications: Notice[];
   health: { id: string; state: string; note: string; updatedAt: string }[];
-  sources: { tmdb: boolean; streaming: boolean; email?: boolean };
+  sources: { tmdb: boolean; email?: boolean };
 };
-export type Page = "upcoming" | "search" | "following" | "settings";
+export type Page = "movies" | "tv" | "search" | "following" | "settings";
 export type User = { email: string };
 export const countries: Record<string, string> = {
   US: "United States",
@@ -55,8 +62,24 @@ export const services = [
   "Apple TV",
   "Disney+",
   "HBO Max",
+  "Hulu",
+  "Peacock",
+  "Paramount+",
   "Mubi",
 ];
+// TMDB network logos (transparent PNGs, shown white via CSS). Services without one
+// fall back to their initial.
+const tmdbLogo = (path: string) => "https://image.tmdb.org/t/p/w300" + path;
+export const serviceLogos: Record<string, string> = {
+  Netflix: tmdbLogo("/wwemzKWzjKYJFfCeiB57q3r4Bcm.png"),
+  "Prime Video": tmdbLogo("/w7HfLNm9CWwRmAMU58udl2L7We7.png"),
+  "Apple TV": tmdbLogo("/bngHRFi794mnMq34gfVcm9nDxN1.png"),
+  "Disney+": tmdbLogo("/1edZOYAfoyZyZ3rklNSiUpXX30Q.png"),
+  "HBO Max": tmdbLogo("/nmU0UMDJB3dRRQSTUqawzF2Od1a.png"),
+  Hulu: tmdbLogo("/pqUTCleNUiTLAVlelGxUgWn1ELh.png"),
+  Peacock: tmdbLogo("/gIAcGTjKKr0KOHL5s4O36roJ8p7.png"),
+  "Paramount+": tmdbLogo("/fi83B1oztoS47xxcemFdPMhIzK.png"),
+};
 export const rules = [
   ["announced", "Date announced"],
   ["changed", "Date changed"],

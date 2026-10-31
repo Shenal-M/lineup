@@ -24,6 +24,7 @@ test(
         await s.sql.unsafe(await readFile(new URL(file, migrations), "utf8"));
       await s.sql`truncate records,outbox,account,sessions,auth_attempts,email_deliveries`;
       await seed(s);
+      await s.put("titles", { id: "dog-stars", name: "The Dog Stars", mediaType: "movie" });
       const sub = {
         id: "test-sub",
         titleId: "dog-stars",
@@ -363,6 +364,8 @@ test("round-trip optimised store writes", { skip: !url }, async (t) => {
 
     await t.test("re-following re-arms superseded reminders without duplicates", async () => {
       await fresh();
+      // A follow in another market keeps the title (and its dates) stored across unfollows.
+      await s.follow({ ...sub, id: "keep", market: "GB" });
       const follow = () => s.follow({ ...sub, createdAt: "2026-10-01T00:00:00Z" });
       await follow();
       await s.upsert(event);
@@ -461,7 +464,7 @@ test("round-trip optimised store writes", { skip: !url }, async (t) => {
       assert.equal((await s.all("observations")).length, 3);
       assert.equal((await s.get("releases", "r")).date, "2026-12-01");
     });
-    await t.test("search and import refresh stored titles but keep hydrated fields", async () => {
+    await t.test("import refreshes stored titles but keeps hydrated fields", async () => {
       await fresh();
       await s.put("titles", { id: "t", name: "Old", genre: "Hydrated", seasons: [{ number: 1 }] });
       await s.putMany("titles", [{ id: "t", name: "New", genre: "Movie" }], { merge: true });
@@ -490,15 +493,89 @@ test("round-trip optimised store writes", { skip: !url }, async (t) => {
       assert.equal((await s.get("health", "tmdb")).state, "ok");
     });
 
-    await t.test("seeding is a no-op once settings exist", async () => {
+    await t.test("seeding writes default settings once and no sample titles", async () => {
       await fresh();
       await seed(s);
-      const count = (await s.all("titles")).length;
-      assert.ok(count > 0);
+      assert.equal((await s.get("settings", "user")).market, "US");
+      assert.equal((await s.all("titles")).length, 0);
       await s.put("settings", { id: "user", market: "GB", timezone: "Europe/London", hour: 8 });
       await seed(s);
-      assert.equal((await s.all("titles")).length, count);
       assert.equal((await s.get("settings", "user")).market, "GB");
+    });
+
+    const title = { id: "t", name: "Title", mediaType: "movie" };
+    await t.test("first follow stores the title and its dates as a baseline", async () => {
+      await fresh();
+      await s.track({ title, releases: [event] }, sub);
+      assert.equal((await s.get("titles", "t")).name, "Title");
+      assert.equal((await s.get("releases", "r")).revision, 1);
+      assert.equal((await s.get("subscriptions", "s")).titleId, "t");
+      await s.tick(new Date("2026-10-01T00:00Z"));
+      // Saving the current date is not an announcement.
+      assert.equal((await s.all("notifications")).length, 0);
+      // A later change found by a refresh is.
+      const renamed = { ...title, name: "Renamed" };
+      assert.equal(
+        await s.refresh([{ title: renamed, releases: [{ ...event, date: "2026-11-20" }] }]),
+        1,
+      );
+      await s.tick(new Date("2026-10-01T01:00Z"));
+      assert.deepEqual(
+        (await s.all("notifications")).map((n) => [n.kind, n.date, n.titleName]),
+        [["changed", "2026-11-20", "Renamed"]],
+      );
+      assert.equal((await s.get("releases", "r")).revision, 2);
+    });
+
+    await t.test("refresh skips titles that are no longer followed", async () => {
+      await fresh();
+      assert.equal(await s.refresh([{ title, releases: [event] }]), 0);
+      assert.equal(await s.get("titles", "t"), null);
+      assert.equal(await s.get("releases", "r"), null);
+    });
+
+    await t.test("the last unfollow deletes the title; notifications keep its name", async () => {
+      await fresh();
+      await s.track({ title, releases: [] }, sub);
+      await s.follow({ ...sub, id: "s2", medium: "theatrical" });
+      await s.upsert({ ...event, manual: true });
+      await s.tick(new Date("2026-10-01T00:00Z"));
+      assert.equal((await s.all("notifications")).length, 1);
+      await s.unfollow("s");
+      assert.ok(await s.get("titles", "t"), "still followed in cinemas");
+      await s.unfollow("s2");
+      for (const kind of ["titles", "releases", "observations", "subscriptions"])
+        assert.equal((await s.all(kind)).length, 0, kind);
+      assert.equal((await s.all("notifications"))[0].titleName, "Title");
+    });
+
+    await t.test("the followed-only migration removes unfollowed and sample data", async () => {
+      await fresh();
+      await s.putMany("titles", [
+        { id: "sample", name: "Sample", demo: true },
+        { id: "kept", name: "Kept" },
+        { id: "dropped", name: "Dropped" },
+      ]);
+      await s.putMany("subscriptions", [
+        { ...sub, id: "a", titleId: "sample" },
+        { ...sub, id: "b", titleId: "kept" },
+      ]);
+      await s.putMany("releases", [
+        { ...event, id: "r1", titleId: "kept" },
+        { ...event, id: "r2", titleId: "dropped" },
+      ]);
+      await s.putMany("notifications", [
+        { id: "n1", titleId: "kept" },
+        { id: "n2", titleId: "sample" },
+      ]);
+      const file = new URL("../supabase/migrations/202611010001_followed_only.sql", import.meta.url);
+      await s.sql.unsafe(await readFile(file, "utf8"));
+      const ids = async (kind: string) => (await s.all(kind)).map((x) => x.id).sort();
+      assert.deepEqual(await ids("titles"), ["kept"]);
+      assert.deepEqual(await ids("subscriptions"), ["b"]);
+      assert.deepEqual(await ids("releases"), ["r1"]);
+      assert.deepEqual(await ids("notifications"), ["n1"]);
+      assert.equal((await s.get("notifications", "n1")).titleName, "Kept");
     });
 
     await t.test("rate limiting takes a slot per attempt, per address and globally", async () => {

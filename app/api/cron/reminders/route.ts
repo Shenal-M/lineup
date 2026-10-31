@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { getRuntime } from "../../../../src/lib/runtime";
 import { deliverEmails, emailConfigured } from "../../../../src/email";
+import { refreshFollowed } from "../../../../src/sync";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 export async function GET(request: Request) {
@@ -17,6 +18,10 @@ export async function GET(request: Request) {
   const headers = { "Cache-Control": "no-store" };
   try {
     const { store } = await getRuntime();
+    // A failed TMDB check is recorded in health; reminders still go out.
+    await refreshFollowed(store).catch((e) =>
+      console.error("Refreshing followed titles failed:", e instanceof Error ? e.message : e),
+    );
     await store.tick();
     // Without email configuration the job still keeps the in-app inbox current.
     if (!emailConfigured())

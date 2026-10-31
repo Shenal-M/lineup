@@ -1,24 +1,27 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ExternalLink, Plus } from "lucide-react";
-import { Bell, Icon, Modal, Poster } from "./ui";
+import { Bell, Icon, Modal, Poster, channel } from "./ui";
 import {
   api,
   countries,
   dateLabel,
   defaultRules,
   rules,
+  serviceLogos,
   services,
   type State,
   type Title,
   type Release,
+  type Season,
 } from "./types";
 import type { Medium } from "../model";
 type Props = {
   title: Title;
+  /** Live TMDB dates for every market; undefined while loading. */
+  releases?: Release[] | null;
   state: State;
   refresh: () => Promise<State>;
-  setTitle: (t: Title) => void;
   onClose: () => void;
   notify: (s: string) => void;
   onError: (e: unknown) => void;
@@ -36,11 +39,13 @@ const flaggedStatuses = [
   "cancelled",
   "first_observed",
 ];
+const channelKey = (medium: Medium, service: string | null, all = false) =>
+  `${medium}:${all ? "*" : service}`;
 export function TitleDetails({
   title: t,
+  releases,
   state,
   refresh,
-  setTitle,
   onClose,
   notify,
   onError,
@@ -50,11 +55,16 @@ export function TitleDetails({
     // Optimistic bell state per channel while its request is in flight.
     [pending, setPending] = useState<Record<string, boolean>>({}),
     [expanded, setExpanded] = useState(false),
-    [clamped, setClamped] = useState(false);
+    [clamped, setClamped] = useState(false),
+    [season, setSeason] = useState<Season | null>(null);
   const more = useRef<HTMLDetailsElement>(null),
     synopsis = useRef<HTMLParagraphElement>(null);
+  // A followed title shows its stored dates (corrections, what reminders use);
+  // any other title shows TMDB's live dates.
   const market = state.settings.market,
-    events = state.releases.filter(
+    stored = state.titles.some((x) => x.id === t.id),
+    loading = !stored && releases === undefined,
+    events = (stored ? state.releases : releases || []).filter(
       (e) => e.titleId === t.id && e.market === market,
     );
   const subscriptions = state.subscriptions.filter(
@@ -76,14 +86,21 @@ export function TitleDetails({
     observer.observe(el);
     return () => observer.disconnect();
   }, [t.id, t.synopsis]);
-  function selected(medium: Medium, service: string | null) {
+  // A channel is one named service, any service (null), or — for the merged
+  // "Streaming" row of a single-service show — every subscription of the medium.
+  function selected(medium: Medium, service: string | null, all = false) {
     return subscriptions.filter(
       (s) =>
         s.medium === medium &&
-        (service ? s.services.includes(service) : !s.services.length),
+        (all ||
+          (service ? s.services.includes(service) : !s.services.length)),
     );
   }
-  async function toggle(medium: Medium, service: string | null, extra = false) {
+  async function toggle(
+    medium: Medium,
+    service: string | null,
+    { extra = false, all = false } = {},
+  ) {
     // One change at a time per title, even across dialog remounts.
     const lock = `${t.id}:${market}`;
     if (toggling.has(lock) || busy) return;
@@ -94,8 +111,8 @@ export function TitleDetails({
     }
     staleAgainst.delete(lock);
     toggling.add(lock);
-    const existing = selected(medium, service),
-      key = `${medium}:${service}`;
+    const existing = selected(medium, service, all),
+      key = channelKey(medium, service, all);
     setBusy(key);
     // Flip the bell now; the server round-trip confirms (or reverts) it.
     setPending((p) => ({ ...p, [key]: !existing.length }));
@@ -105,9 +122,9 @@ export function TitleDetails({
         if (existing.length)
           await Promise.all(
             existing.map((s) => {
-              const rest = service
-                ? s.services.filter((x) => x !== service)
-                : [];
+              // Unfollowing every service drops the whole record.
+              const rest =
+                service && !all ? s.services.filter((x) => x !== service) : [];
               return rest.length
                 ? api("subscriptions", "POST", { ...s, services: rest })
                 : api("subscriptions/" + encodeURIComponent(s.id), "DELETE");
@@ -177,15 +194,15 @@ export function TitleDetails({
       setBusy("");
     }
   }
-  async function season(number: string) {
-    if (!number) return;
+  async function pickSeason(number: string) {
+    if (!number) return setSeason(null);
     setBusy("season");
     try {
-      const title = await api<Title>(
-        `titles/${encodeURIComponent(t.id)}/seasons/${number}`,
+      setSeason(
+        await api<Season>(
+          `titles/${encodeURIComponent(t.id)}/seasons/${number}`,
+        ),
       );
-      await refresh();
-      setTitle(title);
     } catch (error) {
       onError(error);
     } finally {
@@ -196,28 +213,48 @@ export function TitleDetails({
     medium: Medium,
     service: string | null,
     dates: Release[],
-    { label = service || "In cinemas", extra = false } = {},
+    {
+      label = service || "In cinemas",
+      extra = false,
+      all = false,
+      via = null as string | null,
+    } = {},
   ) {
-    const key = `${medium}:${service}`,
-      on = pending[key] ?? selected(medium, service).length > 0;
+    const key = channelKey(medium, service, all),
+      on = pending[key] ?? selected(medium, service, all).length > 0,
+      logo = service ? serviceLogos[service] : undefined,
+      viaLogo = via ? serviceLogos[via] : undefined;
     return (
       <li className="channel-row" key={key}>
-        {service ? (
-          <span className="channel-mark" aria-hidden="true">
-            {service.slice(0, 1)}
+        {/* Extra-service rows are all streaming: the logo leads instead. */}
+        {!extra && (
+          <span className="channel-icon">
+            <Icon name={medium} />
           </span>
-        ) : (
-          <span
-            className={`channel-mark is-dot ${medium}`}
-            aria-hidden="true"
-          />
         )}
-        <span className="channel-name">{label}</span>
+        <span className="channel-name">
+          {logo ? (
+            <img className="service-logo" src={logo} alt={service!} />
+          ) : (
+            label
+          )}
+          {via &&
+            (viaLogo ? (
+              <img className="service-logo is-small" src={viaLogo} alt={via} />
+            ) : (
+              <span className="channel-via">{via}</span>
+            ))}
+        </span>
         {!extra && (
           <span className="channel-dates">
-            {dates.length ? (
+            {loading ? (
+              <span className="date-tba">…</span>
+            ) : dates.length ? (
               dates.map((e) => (
                 <span key={e.id} className="channel-date">
+                  {e.season && (
+                    <small className="date-status">S{e.season}</small>
+                  )}
                   {e.date && flaggedStatuses.includes(e.status) && (
                     <small className="date-status">
                       {e.status.replace("_", " ")}
@@ -244,7 +281,7 @@ export function TitleDetails({
           title={
             on ? "Following — tap to stop" : "Notify me, even before a date"
           }
-          onClick={() => void toggle(medium, service, extra)}
+          onClick={() => void toggle(medium, service, { extra, all })}
         >
           <Bell on={on} />
         </button>
@@ -261,12 +298,39 @@ export function TitleDetails({
         .flatMap((s) => s.services),
     ]),
   ];
-  const extraServices = services.filter((s) => !shownServices.includes(s));
+  // Movies are tracked by their cinema and digital (VOD) dates; service rows are for
+  // TV, or for streaming dates added by hand.
+  const movie = t.mediaType === "movie",
+    showStreaming =
+      !movie ||
+      events.some((e) => e.medium === "streaming") ||
+      subscriptions.some((s) => s.medium === "streaming");
+  const extraServices = movie
+    ? []
+    : services.filter((s) => !shownServices.includes(s));
+  const digital = events.filter((e) => e.medium === "digital"),
+    digitalVia = digital.find((e) => e.service)?.service;
+  // "Any service" follows fire for every service, so its date is the earliest one.
+  const streaming = events.filter((e) => e.medium === "streaming"),
+    unnamed = streaming.filter((e) => !e.service),
+    anyService = unnamed.length
+      ? unnamed
+      : streaming
+          .filter((e) => e.date)
+          .sort((a, b) => a.date!.localeCompare(b.date!))
+          .slice(0, 1);
+  // One service (or none known): a single "Streaming" row covers named and
+  // any-service follows alike, with that service's own dates.
+  const singleService = shownServices.length <= 1,
+    ownDates = shownServices.length
+      ? streaming.filter((e) => e.service === shownServices[0])
+      : [],
+    streamingDates = ownDates.length ? ownDates : anyService;
+  const network = t.network,
+    networkLogo = network ? network.logo || serviceLogos[network.name] : null;
   const meta = [
     t.mediaType === "tv" ? "TV" : "Movie",
-    t.season ? `Season ${t.season}` : null,
-    t.season && t.episodes?.length ? `${t.episodes.length} episodes` : null,
-    t.season ? null : t.year,
+    t.year,
     (t.genre || "").split(" · ").filter(Boolean).join(", "),
   ].filter(Boolean);
   if (editor !== undefined)
@@ -309,30 +373,68 @@ export function TitleDetails({
           <div className="title-copy">
             <div className="title-head">
               <h2>{t.name}</h2>
-              {t.demo && <span className="sample-badge">Sample</span>}
             </div>
+            {network && (
+              <p className="title-network" title={`On ${network.name}`}>
+                {networkLogo ? (
+                  <img
+                    className="service-logo"
+                    src={networkLogo}
+                    alt={`On ${network.name}`}
+                  />
+                ) : (
+                  <>
+                    <span className="sr-only">On </span>
+                    {network.name}
+                  </>
+                )}
+              </p>
+            )}
             {meta.length > 0 && (
               <p className="title-meta">{meta.join(" · ")}</p>
             )}
-            {!!t.seasons?.length && (
-              <div className="season-pick">
-                <label className="sr-only" htmlFor="season-number">
-                  Season
-                </label>
-                <select
-                  id="season-number"
-                  key={t.id}
-                  defaultValue=""
-                  disabled={busy === "season"}
-                  onChange={(e) => void season(e.target.value)}
-                >
-                  <option value="">Choose a season</option>
-                  {t.seasons.map((s) => (
-                    <option key={s.number} value={s.number}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
+            {(!!t.seasons?.length || t.imdbId) && (
+              <div className="title-actions">
+                {!!t.seasons?.length && (
+                  <div className="season-pick">
+                    <label className="sr-only" htmlFor="season-number">
+                      Season
+                    </label>
+                    <select
+                      id="season-number"
+                      key={t.id}
+                      defaultValue=""
+                      disabled={busy === "season"}
+                      onChange={(e) => {
+                        void pickSeason(e.target.value);
+                        if (more.current) more.current.open = true;
+                      }}
+                    >
+                      <option value="">Episodes by season</option>
+                      {t.seasons.map((s) => (
+                        <option key={s.number} value={s.number}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {t.imdbId && (
+                  <a
+                    className="imdb-link"
+                    href={`https://www.imdb.com/title/${encodeURIComponent(t.imdbId)}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${t.name} on IMDb (opens in a new tab)`}
+                  >
+                    IMDb
+                    <ExternalLink
+                      size={12}
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                    />
+                  </a>
+                )}
               </div>
             )}
             <p
@@ -368,21 +470,33 @@ export function TitleDetails({
                 null,
                 events.filter((e) => e.medium === "theatrical"),
               )}
-            {shownServices.map((service) =>
-              channelRow(
-                "streaming",
-                service,
-                events.filter(
-                  (e) => e.medium === "streaming" && e.service === service,
+            {(movie || digital.length > 0) &&
+              channelRow("digital", null, digital, {
+                label: "Digital",
+                via: digitalVia || null,
+              })}
+            {showStreaming &&
+              singleService &&
+              channelRow("streaming", null, streamingDates, {
+                label: "Streaming",
+                all: true,
+              })}
+            {showStreaming &&
+              !singleService &&
+              shownServices.map((service) =>
+                channelRow(
+                  "streaming",
+                  service,
+                  events.filter(
+                    (e) => e.medium === "streaming" && e.service === service,
+                  ),
                 ),
-              ),
-            )}
-            {channelRow(
-              "streaming",
-              null,
-              events.filter((e) => e.medium === "streaming" && !e.service),
-              { label: "Any streaming service" },
-            )}
+              )}
+            {showStreaming &&
+              !singleService &&
+              channelRow("streaming", null, anyService, {
+                label: "Any streaming service",
+              })}
           </ul>
         </section>
         <details className="detail-more" ref={more}>
@@ -434,10 +548,7 @@ export function TitleDetails({
                     <li className="source-entry" key={e.id}>
                       <div>
                         <strong>
-                          {e.service ||
-                            (e.medium === "theatrical"
-                              ? "In cinemas"
-                              : "Streaming")}
+                          {channel(e)}
                         </strong>
                         <small>
                           {e.source}
@@ -460,33 +571,42 @@ export function TitleDetails({
                           )}
                         </small>
                       </div>
-                      <button
-                        type="button"
-                        aria-label={`Edit ${e.service || (e.medium === "theatrical" ? "cinema" : "streaming")} date`}
-                        onClick={() => setEditor(e)}
-                      >
-                        Edit
-                      </button>
+                      {stored && (
+                        <button
+                          type="button"
+                          aria-label={`Edit ${channel(e)} date`}
+                          onClick={() => setEditor(e)}
+                        >
+                          Edit
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
               )}
-              <button
-                type="button"
-                className="text-button add-date"
-                onClick={() => setEditor(null)}
-              >
-                <Plus size={14} strokeWidth={1.75} aria-hidden="true" />
-                Add or correct a date
-              </button>
+              {stored ? (
+                <button
+                  type="button"
+                  className="text-button add-date"
+                  onClick={() => setEditor(null)}
+                >
+                  <Plus size={14} strokeWidth={1.75} aria-hidden="true" />
+                  Add or correct a date
+                </button>
+              ) : (
+                <small className="more-note">
+                  {events.length ? "From TMDB. " : "TMDB has no dates for " + countries[market] + " yet. "}
+                  Follow the title to correct its dates.
+                </small>
+              )}
             </section>
-            {!!t.episodes?.length && (
+            {!!season?.episodes.length && (
               <section className="more-section">
                 <h4>
-                  Episodes <span>{t.episodes.length}</span>
+                  {season.name} <span>{season.episodes.length}</span>
                 </h4>
                 <ol className="episode-list">
-                  {t.episodes.map((e) => (
+                  {season.episodes.map((e) => (
                     <li key={e.number}>
                       <span>
                         {e.number}. {e.name}
@@ -521,7 +641,9 @@ function ReleaseEditor({
   onSaved: () => Promise<void>;
   onError: (e: unknown) => void;
 }) {
-  const [medium, setMedium] = useState<Medium>(event?.medium || "streaming"),
+  const [medium, setMedium] = useState<Medium>(
+      event?.medium || (title.mediaType === "movie" ? "digital" : "streaming"),
+    ),
     [precision, setPrecision] = useState(event?.precision || "unknown"),
     [busy, setBusy] = useState(false);
   async function save(e: FormEvent<HTMLFormElement>) {
@@ -538,8 +660,13 @@ function ReleaseEditor({
           market,
           medium,
           precision,
-          service: medium === "streaming" ? data.get("service") || null : null,
-          offer: medium === "streaming" ? "subscription" : "ticket",
+          service: medium === "theatrical" ? null : data.get("service") || null,
+          offer:
+            medium === "streaming"
+              ? "subscription"
+              : medium === "digital"
+                ? "digital"
+                : "ticket",
           date: precision === "unknown" ? null : data.get("date"),
         },
       );
@@ -557,8 +684,8 @@ function ReleaseEditor({
         <button onClick={onBack}>Back</button>
       </div>
       <p>
-        Keep the date’s precision and source. Imports will preserve manual
-        corrections.
+        Keep the date’s precision and source. TMDB updates won’t overwrite
+        your correction.
       </p>
       <form onSubmit={save}>
         <div className="split">
@@ -570,6 +697,7 @@ function ReleaseEditor({
               onChange={(e) => setMedium(e.target.value as Medium)}
             >
               <option value="theatrical">Theatrical</option>
+              <option value="digital">Digital (VOD)</option>
               <option value="streaming">Subscription streaming</option>
             </select>
           </div>

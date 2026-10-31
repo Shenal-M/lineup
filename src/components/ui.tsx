@@ -2,42 +2,123 @@
 import {
   memo,
   useEffect,
+  useId,
   useRef,
   useState,
-  type CSSProperties,
   type ReactNode,
+  type SVGProps,
 } from "react";
 import type { Title, Release } from "./types";
 import { dateLabel } from "./types";
 import {
   Bell as BellIcon,
   BellRing,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Clapperboard,
+  Film,
   Globe,
   Heart,
   LayoutGrid,
   List,
+  MonitorDown,
+  MonitorPlay,
   Search,
   Settings,
+  Tv,
   X,
   type LucideIcon,
 } from "lucide-react";
+// Three lobes growing toward the viewer: a line-up of what's coming. Ids are
+// per instance so each inline copy keeps its own gradients.
+const lobes = [
+  { cx: 23, cy: 47, rx: 13.5, ry: 19, rotate: 0 },
+  { cx: 39, cy: 48.5, rx: 15.5, ry: 27, rotate: 4 },
+  { cx: 63, cy: 51, rx: 22, ry: 39, rotate: 8 },
+];
+export function BrandMark({ className = "brand-mark" }: { className?: string }) {
+  const id = useId().replace(/[^\w-]/g, ""),
+    ref = (name: string) => `url(#${id}-${name})`;
+  const lobe = (i: number, props: SVGProps<SVGEllipseElement> = {}) => {
+    const { cx, cy, rx, ry, rotate } = lobes[i];
+    return (
+      <ellipse
+        key={i}
+        cx={cx}
+        cy={cy}
+        rx={rx}
+        ry={ry}
+        transform={`rotate(${rotate} ${cx} ${cy})`}
+        {...props}
+      />
+    );
+  };
+  return (
+    <svg className={className} viewBox="0 0 100 100" aria-hidden="true">
+      <defs>
+        <linearGradient
+          id={`${id}-body`}
+          gradientUnits="userSpaceOnUse"
+          x1="10"
+          y1="28"
+          x2="86"
+          y2="66"
+        >
+          <stop offset="0" stopColor="#e2fb93" />
+          <stop offset="0.4" stopColor="#bef264" />
+          <stop offset="0.85" stopColor="#7cc520" />
+          <stop offset="1" stopColor="#5fa818" />
+        </linearGradient>
+        <radialGradient
+          id={`${id}-sheen`}
+          gradientUnits="userSpaceOnUse"
+          cx="34"
+          cy="30"
+          r="40"
+        >
+          <stop offset="0" stopColor="#fff" stopOpacity="0.45" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id={`${id}-shade`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0.45" stopColor="#143300" stopOpacity="0" />
+          <stop offset="1" stopColor="#143300" stopOpacity="0.32" />
+        </linearGradient>
+        <radialGradient id={`${id}-rim`} cx="0.36" cy="0.48" r="0.64">
+          <stop offset="0.8" stopColor="#e7fff2" stopOpacity="0" />
+          <stop offset="1" stopColor="#e7fff2" stopOpacity="0.8" />
+        </radialGradient>
+        <filter id={`${id}-lift`} x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow
+            dx="-1.2"
+            dy="0.4"
+            stdDeviation="2.2"
+            floodColor="#1d4a00"
+            floodOpacity="0.32"
+          />
+        </filter>
+        <clipPath id={`${id}-all`}>{[0, 1, 2].map((i) => lobe(i))}</clipPath>
+      </defs>
+      <g clipPath={ref("all")}>
+        <rect width="100" height="100" fill={ref("body")} />
+        {[1, 2].map((i) => lobe(i, { fill: ref("body"), filter: ref("lift") }))}
+        <rect width="100" height="100" fill={ref("sheen")} />
+        <rect width="100" height="100" fill={ref("shade")} />
+        {lobe(2, { fill: ref("rim") })}
+      </g>
+    </svg>
+  );
+}
 export function Brand() {
   return (
     <span className="brand">
-      <span className="brand-mark" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-      </span>
+      <BrandMark />
       Lineup
     </span>
   );
 }
 const icons = {
-  calendar: CalendarDays,
+  film: Film,
+  tv: Tv,
   search: Search,
   heart: Heart,
   settings: Settings,
@@ -47,6 +128,10 @@ const icons = {
   next: ChevronRight,
   close: X,
   globe: Globe,
+  // Release channels: cinema, subscription streaming, digital (rent/buy VOD).
+  theatrical: Clapperboard,
+  streaming: MonitorPlay,
+  digital: MonitorDown,
 } satisfies Record<string, LucideIcon>;
 // Lucide icons; import others directly from "lucide-react" with the same props.
 export function Icon({
@@ -99,33 +184,29 @@ export function Poster({
   title: Title;
   onClick?: () => void;
 }) {
-  const style = t.demo
-    ? ({ "--ink": t.ink, "--poster-bg": t.bg } as CSSProperties)
-    : undefined;
   const content = t.poster ? (
     <img src={t.poster} alt={`${t.name} poster`} loading="lazy" />
   ) : (
-    <span className="poster-art">{t.art || t.name}</span>
+    <span className="poster-art">{t.name}</span>
   );
   return onClick ? (
-    <button
-      className="poster"
-      onClick={onClick}
-      aria-label={`View ${t.name}`}
-      style={style}
-    >
+    <button className="poster" onClick={onClick} aria-label={`View ${t.name}`}>
       {content}
     </button>
   ) : (
-    <div className="poster" style={style}>
-      {content}
-    </div>
+    <div className="poster">{content}</div>
   );
 }
 export function channel(e: Release) {
-  return (
-    e.service || (e.medium === "theatrical" ? "In cinemas" : "Streaming")
-  );
+  const where =
+    e.medium === "theatrical"
+      ? "In cinemas"
+      : e.medium === "digital"
+        ? e.service
+          ? `Digital · ${e.service}`
+          : "Digital"
+        : e.service || "Streaming";
+  return e.season ? `Season ${e.season} · ${where}` : where;
 }
 export function shortDate(date?: string | null) {
   if (!date) return "Date TBA";

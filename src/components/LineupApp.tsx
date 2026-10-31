@@ -11,14 +11,10 @@ import {
 } from "react";
 import { AuthPanel } from "./AuthPanel";
 import { Brand, Bell, Modal, Empty, Icon, shortDate } from "./ui";
-import {
-  Upcoming,
-  SearchPage,
-  Following,
-  buildLookup,
-  type SearchMemory,
-  type UpcomingView,
-} from "./pages";
+import { Upcoming, buildLookup, type UpcomingView } from "./pages";
+import { SearchPage, type SearchMemory } from "./search";
+import { Following } from "./following";
+import { Library } from "./library";
 import { SettingsPage } from "./SettingsPage";
 import { TitleDetails } from "./TitleDetails";
 import {
@@ -28,6 +24,8 @@ import {
   countries,
   type State,
   type Title,
+  type Release,
+  type Detail,
   type User,
   type Page,
 } from "./types";
@@ -45,12 +43,14 @@ const signedOut: AuthStatus = {
   user: null,
 };
 const pages: Record<string, Page> = {
+  "/tv": "tv",
   "/search": "search",
   "/following": "following",
   "/settings": "settings",
 };
 const nav = [
-  ["upcoming", "/", "calendar", "Upcoming"],
+  ["movies", "/", "film", "Movies"],
+  ["tv", "/tv", "tv", "TV shows"],
   ["search", "/search", "search", "Search"],
   ["following", "/following", "heart", "Following"],
   ["settings", "/settings", "settings", "Settings"],
@@ -63,7 +63,9 @@ const kinds: Record<string, string> = {
   release: "Today",
 };
 const emptySearch: SearchMemory = { query: "", searched: "", results: null };
-const defaultView: UpcomingView = { filter: "all", layout: "list" };
+const defaultView: UpcomingView = { filter: "all", layout: "list", sort: "date" };
+/** The open title; `releases` is undefined while its TMDB dates load. */
+type Active = { title: Title; releases?: Release[] | null };
 
 // Toast: a tiny external store so showing/clearing a toast only re-renders
 // <Toast />, not the whole shell. `notify` is a stable module function.
@@ -107,12 +109,12 @@ function Toast() {
 }
 
 export function LineupApp() {
-  const page = pages[usePathname()] || "upcoming";
+  const page = pages[usePathname()] || "movies";
   const [status, setStatus] = useState<AuthStatus | null>(null),
     [state, setState] = useState<State | null>(null),
     [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState(""),
-    [active, setActive] = useState<Title | null>(null),
+    [active, setActive] = useState<Active | null>(null),
     [inbox, setInbox] = useState(false),
     // Unread ids captured as the inbox opens (opening marks them read).
     [unread, setUnread] = useState<Set<string>>(() => new Set());
@@ -120,7 +122,7 @@ export function LineupApp() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  // View state that survives switching between Upcoming/Search.
+  // View state that survives switching between pages.
   const [upcomingView, setUpcomingView] = useState(defaultView),
     [searchMemory, setSearchMemory] = useState(emptySearch);
   const selection = useRef(0);
@@ -177,16 +179,15 @@ export function LineupApp() {
   const selectTitle = useCallback(
     async (title: Title) => {
       const n = ++selection.current;
-      setActive(title);
-      if (!title.id.includes("-season-")) {
-        try {
-          const fresh = await api<Title>(
-            "titles/" + encodeURIComponent(title.id),
-          );
-          if (selection.current === n) setActive(fresh);
-        } catch (err) {
-          fail(err);
-        }
+      setActive({ title });
+      try {
+        const detail = await api<Detail>(
+          "titles/" + encodeURIComponent(title.id),
+        );
+        if (selection.current === n) setActive(detail);
+      } catch (err) {
+        if (selection.current === n) setActive({ title, releases: null });
+        fail(err);
       }
     },
     [fail],
@@ -245,6 +246,21 @@ export function LineupApp() {
     );
   const market = state.settings.market;
   const { unreadCount, followingCount } = lookup;
+  const navLink = ([id, href, icon, label]: (typeof nav)[number]) => (
+    <Link
+      key={id}
+      href={href}
+      className={
+        (id === "settings" ? "settings-link " : "") +
+        (page === id ? "active" : "")
+      }
+      aria-current={page === id ? "page" : undefined}
+    >
+      <Icon name={icon} />
+      <span>{label}</span>
+      {id === "following" && followingCount > 0 && <b>{followingCount}</b>}
+    </Link>
+  );
   return (
     <>
       <div className="shell">
@@ -253,25 +269,17 @@ export function LineupApp() {
             <Brand />
           </Link>
           {/* One nav, Settings included: it is pinned to the sidebar bottom on
-              desktop and is the last tab on mobile. */}
+              desktop and is the last tab on mobile. The Tracking panel sits
+              between the pages and Settings (hidden on mobile). */}
           <nav>
-            {nav.map(([id, href, icon, label]) => (
-              <Link
-                key={id}
-                href={href}
-                className={
-                  (id === "settings" ? "settings-link " : "") +
-                  (page === id ? "active" : "")
-                }
-                aria-current={page === id ? "page" : undefined}
-              >
-                <Icon name={icon} />
-                <span>{label}</span>
-                {id === "following" && followingCount > 0 && (
-                  <b>{followingCount}</b>
-                )}
-              </Link>
-            ))}
+            {nav.slice(0, -1).map(navLink)}
+            <Library
+              state={state}
+              lookup={lookup}
+              activeId={active?.title.id}
+              onSelect={selectTitle}
+            />
+            {navLink(nav[nav.length - 1])}
           </nav>
           <div className="aside-bottom">
             <div className="profile" title={user.email}>
@@ -327,8 +335,9 @@ export function LineupApp() {
             </div>
           </header>
           <div id="content" key={page}>
-            {page === "upcoming" ? (
+            {page === "movies" || page === "tv" ? (
               <Upcoming
+                kind={page === "tv" ? "tv" : "movie"}
                 state={state}
                 lookup={lookup}
                 month={month}
@@ -336,6 +345,7 @@ export function LineupApp() {
                 view={upcomingView}
                 setView={setUpcomingView}
                 onSelect={selectTitle}
+                onError={fail}
               />
             ) : page === "search" ? (
               <SearchPage
@@ -352,7 +362,6 @@ export function LineupApp() {
               <SettingsPage
                 state={state}
                 user={user}
-                month={month}
                 refresh={refresh}
                 onSignOut={signOut}
                 openInbox={openInbox}
@@ -365,11 +374,11 @@ export function LineupApp() {
       </div>
       {active && (
         <TitleDetails
-          key={active.id}
-          title={active}
+          key={active.title.id}
+          title={active.title}
+          releases={active.releases}
           state={state}
           refresh={refresh}
-          setTitle={setActive}
           onClose={() => {
             selection.current++;
             setActive(null);
@@ -397,11 +406,22 @@ export function LineupApp() {
                   .slice()
                   .reverse()
                   .map((n) => {
-                    const t = lookup.titles.get(n.titleId);
+                    // Unfollowed titles are no longer stored; they open from TMDB.
+                    const t =
+                      lookup.titles.get(n.titleId) ||
+                      (n.titleName && /^tmdb-(movie|tv)-[0-9]+$/.test(n.titleId)
+                        ? ({
+                            id: n.titleId,
+                            name: n.titleName,
+                            mediaType: n.titleId.startsWith("tmdb-tv-")
+                              ? "tv"
+                              : "movie",
+                          } as Title)
+                        : undefined);
                     const body = (
                       <>
                         <span className="sheet-title">
-                          {t?.name || "Release update"}
+                          {t?.name || n.titleName || "Release update"}
                           {unread.has(n.id) && (
                             <i className="unread">
                               <span className="sr-only">New</span>
@@ -412,10 +432,11 @@ export function LineupApp() {
                           {[
                             kinds[n.kind] || n.kind,
                             shortDate(n.date),
-                            n.service ||
-                              (n.medium === "theatrical"
-                                ? "In cinemas"
-                                : "Streaming"),
+                            n.medium === "theatrical"
+                              ? "In cinemas"
+                              : n.medium === "digital"
+                                ? "Digital"
+                                : n.service || "Streaming",
                           ].join(" · ")}
                         </span>
                       </>
