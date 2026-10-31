@@ -1,5 +1,6 @@
 "use client";
 import { useState, type FormEvent } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { Brand } from "./ui";
 import { api, message, type User } from "./types";
 export function AuthPanel({
@@ -12,7 +13,8 @@ export function AuthPanel({
   onSignedIn: (user: User) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [showPassword, setShowPassword] = useState(false);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
@@ -31,6 +33,7 @@ export function AuthPanel({
       setBusy(false);
     }
   }
+  const PasswordIcon = showPassword ? EyeOff : Eye;
   return (
     <section
       id="auth-screen"
@@ -40,11 +43,11 @@ export function AuthPanel({
       <div className="auth-card">
         <Brand />
         <div className="auth-heading">
-          <h1>{setup ? "Your lineup starts here." : "Welcome back."}</h1>
+          <h1>{setup ? "Create your account." : "Welcome back."}</h1>
           <p>
             {setup
-              ? "Create your personal sign-in to keep your follows and release dates together."
-              : "Sign in to your releases, wherever you left off."}
+              ? "Set up your sign-in to keep follows and release dates together."
+              : "Sign in to pick up where you left off."}
           </p>
         </div>
         <form onSubmit={submit}>
@@ -70,24 +73,50 @@ export function AuthPanel({
             required
             placeholder="you@example.com"
             maxLength={254}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "auth-error" : undefined}
           />
           <label htmlFor="auth-password">Password</label>
-          <input
-            id="auth-password"
-            name="password"
-            type="password"
-            autoComplete={setup ? "new-password" : "current-password"}
-            minLength={setup ? 12 : undefined}
-            maxLength={256}
-            required
-            placeholder={setup ? "At least 12 characters" : "Your password"}
-          />
-          <div className="auth-error" role="alert">
-            {error}
+          <div className="password-field">
+            <input
+              id="auth-password"
+              name="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete={setup ? "new-password" : "current-password"}
+              minLength={setup ? 12 : undefined}
+              maxLength={256}
+              required
+              placeholder={setup ? "At least 12 characters" : "Your password"}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "auth-error" : undefined}
+            />
+            <button
+              type="button"
+              className="icon-button password-toggle"
+              aria-label="Show password"
+              aria-pressed={showPassword}
+              aria-controls="auth-password"
+              onClick={() => setShowPassword((v) => !v)}
+            >
+              <PasswordIcon
+                className="icon"
+                size={16}
+                strokeWidth={1.75}
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+          <div id="auth-error" className="auth-error" role="alert">
+            {error && <p>{error}</p>}
           </div>
           <button className="primary" type="submit" disabled={busy}>
-            {busy ? "Please wait…" : setup ? "Create my Lineup" : "Sign in"}{" "}
-            <span aria-hidden="true">→</span>
+            {busy
+              ? setup
+                ? "Creating account…"
+                : "Signing in…"
+              : setup
+                ? "Create account"
+                : "Sign in"}
           </button>
         </form>
         <p className="auth-note">
@@ -95,7 +124,6 @@ export function AuthPanel({
             ? "One personal account. Your existing library stays with you."
             : "You’ll stay signed in on this device for 30 days."}
         </p>
-        <div className="auth-footer">Your next watch, all lined up.</div>
       </div>
     </section>
   );

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
-import { Card, Empty, Heading, Modal } from "./ui";
+import { useMemo, useState, type FormEvent } from "react";
+import { Card, Empty, Heading, Icon, Modal, channel } from "./ui";
 import {
   api,
   countries,
@@ -9,55 +9,153 @@ import {
   type State,
   type Title,
   type Release,
+  type Subscription,
 } from "./types";
 import { matches } from "../model";
-type Shared = { state: State; onSelect: (t: Title) => void };
+
+/** Lookups derived once per state (built in LineupApp with useMemo). */
+export type Lookup = {
+  /** titleId → title */
+  titles: Map<string, Title>;
+  /** titleId → that title's subscriptions (all markets) */
+  subscriptions: Map<string, Subscription[]>;
+  /** titleIds followed in the current market */
+  followed: Set<string>;
+  /** Distinct followed titles across all markets (nav badge). */
+  followingCount: number;
+  /** titleId → its first release in the current market */
+  marketRelease: Map<string, Release>;
+  unreadCount: number;
+};
+export function buildLookup(state: State): Lookup {
+  const market = state.settings.market;
+  const titles = new Map(state.titles.map((t) => [t.id, t]));
+  const subscriptions = new Map<string, Subscription[]>();
+  const followed = new Set<string>();
+  for (const s of state.subscriptions) {
+    const list = subscriptions.get(s.titleId);
+    if (list) list.push(s);
+    else subscriptions.set(s.titleId, [s]);
+    if (s.market === market) followed.add(s.titleId);
+  }
+  const marketRelease = new Map<string, Release>();
+  for (const e of state.releases)
+    if (e.market === market && !marketRelease.has(e.titleId))
+      marketRelease.set(e.titleId, e);
+  return {
+    titles,
+    subscriptions,
+    followed,
+    followingCount: subscriptions.size,
+    marketRelease,
+    unreadCount: state.notifications.filter((n) => !n.read).length,
+  };
+}
+/** True when some subscription of the release's title matches it. */
+function followedRelease(lookup: Lookup, e: Release) {
+  return !!lookup.subscriptions.get(e.titleId)?.some((s) => matches(s, e));
+}
+
+type Shared = {
+  state: State;
+  lookup: Lookup;
+  onSelect: (t: Title) => void;
+};
+const statusLabel: Record<string, string> = {
+  estimated: "Estimated",
+  postponed: "Postponed",
+  cancelled: "Cancelled",
+};
+/** Subtle one-line notice shown while the catalogue is sample data. */
+function PreviewNotice({ state }: { state: State }) {
+  if (!state.titles.some((t) => t.demo)) return null;
+  return (
+    <p className="notice">
+      Preview data. Dates and services are illustrative.{" "}
+      <Link href="/settings">Connect sources</Link>
+    </p>
+  );
+}
+
+export type UpcomingFilter = "all" | "theatrical" | "streaming" | "following";
+/** Upcoming filter + layout, kept in LineupApp so they survive view switches. */
+export type UpcomingView = {
+  filter: UpcomingFilter;
+  layout: "list" | "grid";
+};
+const filters: [UpcomingFilter, string][] = [
+  ["all", "All"],
+  ["theatrical", "In cinemas"],
+  ["streaming", "Streaming"],
+  ["following", "Following"],
+];
 export function Upcoming({
   state,
+  lookup,
   month,
   setMonth,
+  view: { filter, layout },
+  setView,
   onSelect,
-}: Shared & { month: Date; setMonth: (d: Date) => void }) {
-  const [filter, setFilter] = useState("all"),
-    [view, setView] = useState("list"),
-    [horizon, setHorizon] = useState(false);
+}: Shared & {
+  month: Date;
+  setMonth: (d: Date) => void;
+  view: UpcomingView;
+  setView: (v: UpcomingView) => void;
+}) {
+  const [horizon, setHorizon] = useState(false);
   const market = state.settings.market,
     prefix = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`;
-  const events = state.releases
-    .filter(
-      (e) =>
-        e.market === market &&
-        e.date?.startsWith(prefix) &&
-        ["day", "month"].includes(e.precision) &&
-        !["cancelled", "postponed"].includes(e.status) &&
-        (filter === "all" ||
-          filter === e.medium ||
-          (filter === "following" &&
-            state.subscriptions.some((s) => matches(s, e)))),
-    )
-    .sort((a, b) => a.date!.localeCompare(b.date!));
-  const groups: Record<string, Release[]> = {};
-  for (const e of events) {
-    const key = e.precision === "month" ? "month" : e.date!;
-    (groups[key] ??= []).push(e);
-  }
-  const unknown = state.releases.filter(
-    (e) =>
-      e.market === market &&
-      ["unknown", "year", "quarter"].includes(e.precision),
+  // The list is keyed by month + layout. Rows stagger in for the list shown
+  // when the view mounts; month/layout changes get a short crossfade instead.
+  const listKey = prefix + layout,
+    [firstKey] = useState(listKey);
+  const { events, groups } = useMemo(() => {
+    const events = state.releases
+      .filter(
+        (e) =>
+          e.market === market &&
+          e.date?.startsWith(prefix) &&
+          (e.precision === "day" || e.precision === "month") &&
+          e.status !== "cancelled" &&
+          e.status !== "postponed" &&
+          lookup.titles.has(e.titleId) &&
+          (filter === "all" ||
+            filter === e.medium ||
+            (filter === "following" && followedRelease(lookup, e))),
+      )
+      .sort((a, b) => a.date!.localeCompare(b.date!));
+    // Day groups in date order; month-precision releases share one group.
+    const groups = new Map<string, Release[]>();
+    for (const e of events) {
+      const key = e.precision === "month" ? "month" : e.date!;
+      const list = groups.get(key);
+      if (list) list.push(e);
+      else groups.set(key, [e]);
+    }
+    return { events, groups: [...groups] };
+  }, [state.releases, market, prefix, filter, lookup]);
+  const unknown = useMemo(
+    () =>
+      state.releases.filter(
+        (e) =>
+          e.market === market &&
+          (e.precision === "unknown" ||
+            e.precision === "year" ||
+            e.precision === "quarter") &&
+          lookup.titles.has(e.titleId),
+      ),
+    [state.releases, market, lookup],
   );
+  const monthName = month.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
   return (
     <>
-      <Heading
-        title="Upcoming releases."
-        subtitle="Theatrical and streaming premieres, in one place."
-      />
-      <div className="sample">
-        <div>
-          <b>Preview data</b> · Dates and services are illustrative.
-        </div>
-        <Link href="/settings">Connect sources ↗</Link>
-      </div>
+      <Heading title="Upcoming">
+        <PreviewNotice state={state} />
+      </Heading>
       <div className="toolbar">
         <div className="month-nav">
           <button
@@ -66,169 +164,201 @@ export function Upcoming({
               setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
             }
           >
-            ‹
+            <Icon name="prev" />
           </button>
-          <h2>
-            {month.toLocaleDateString("en-US", {
-              month: "long",
-              year: "numeric",
-            })}
-          </h2>
+          <h2>{monthName}</h2>
           <button
             aria-label="Next month"
             onClick={() =>
               setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))
             }
           >
-            ›
+            <Icon name="next" />
           </button>
         </div>
-        <div className="filters">
-          {[
-            ["all", "All releases"],
-            ["theatrical", "In cinemas"],
-            ["streaming", "Streaming"],
-            ["following", "Following"],
-          ].map(([value, label]) => (
+        <div className="filters" role="group" aria-label="Filter releases">
+          {filters.map(([value, label]) => (
             <button
               key={value}
               className={filter === value ? "active" : ""}
-              onClick={() => setFilter(value)}
+              onClick={() => setView({ filter: value, layout })}
               aria-pressed={filter === value}
             >
               {label}
             </button>
           ))}
         </div>
-        <div className="view-toggle">
+        <div className="view-toggle" role="group" aria-label="Layout">
           <button
-            className={view === "grid" ? "active" : ""}
-            aria-label="Poster view"
-            aria-pressed={view === "grid"}
-            onClick={() => setView("grid")}
+            className={layout === "list" ? "active" : ""}
+            aria-label="List view"
+            aria-pressed={layout === "list"}
+            onClick={() => setView({ filter, layout: "list" })}
           >
-            ▦
+            <Icon name="list" />
           </button>
           <button
-            className={view === "list" ? "active" : ""}
-            aria-label="List view"
-            aria-pressed={view === "list"}
-            onClick={() => setView("list")}
+            className={layout === "grid" ? "active" : ""}
+            aria-label="Poster view"
+            aria-pressed={layout === "grid"}
+            onClick={() => setView({ filter, layout: "grid" })}
           >
-            ☷
+            <Icon name="grid" />
           </button>
         </div>
       </div>
-      {!events.length && (
-        <Empty
-          title="No releases yet."
-          action={
-            <Link href="/search" className="primary">
-              Find a title ↗
-            </Link>
-          }
-        >
-          No sourced releases for this month in {countries[market]}. Try another
-          month or add a verified date.
-        </Empty>
-      )}
-      <div className={view === "list" ? "list" : ""}>
-        {Object.entries(groups).map(([date, items]) => (
-          <section key={date}>
-            <div className="section-line">
-              <h3>
-                {date === "month"
-                  ? "Sometime this month"
-                  : new Date(date + "T12:00Z").toLocaleDateString("en-US", {
-                      weekday: "long",
-                      month: "short",
-                      day: "numeric",
-                      timeZone: "UTC",
-                    })}
-              </h3>
-              <span>
-                {items.length} {items.length === 1 ? "release" : "releases"}
-              </span>
-            </div>
-            <div className="cards">
-              {items.map((e) => {
-                const t = state.titles.find((t) => t.id === e.titleId);
-                return t ? (
-                  <Card
-                    key={e.id}
-                    title={t}
-                    event={e}
-                    state={state}
-                    onSelect={onSelect}
-                  />
-                ) : null;
-              })}
-            </div>
-          </section>
-        ))}
+      <div
+        key={listKey}
+        className={`releases ${listKey === firstKey ? "stagger" : "swap"}`}
+      >
+        {!events.length ? (
+          <Empty
+            title="Nothing scheduled."
+            action={
+              <Link href="/search" className="primary">
+                Find a title
+              </Link>
+            }
+          >
+            No releases in {monthName} for {countries[market]}. Try another
+            month or follow a title.
+          </Empty>
+        ) : layout === "list" ? (
+          <div className="agenda">
+            {groups.map(([date, items]) => {
+              const d = new Date(date + "T12:00Z"),
+                fmt = (o: Intl.DateTimeFormatOptions) =>
+                  d.toLocaleDateString("en-US", { ...o, timeZone: "UTC" });
+              return (
+                <section key={date}>
+                  {date === "month" ? (
+                    <h3 className="day month">This month</h3>
+                  ) : (
+                    <h3 className="day">
+                      <span className="dow" aria-hidden="true">
+                        {fmt({ weekday: "short" })}
+                      </span>
+                      <span className="dom" aria-hidden="true">
+                        {fmt({ day: "numeric" })}
+                      </span>
+                      <span className="sr-only">
+                        {fmt({ weekday: "long", month: "long", day: "numeric" })}
+                      </span>
+                    </h3>
+                  )}
+                  <div className="rows">
+                    {items.map((e) => (
+                      <Card
+                        key={e.id}
+                        layout="row"
+                        dated={false}
+                        title={lookup.titles.get(e.titleId)!}
+                        event={e}
+                        followed={lookup.followed.has(e.titleId)}
+                        onSelect={onSelect}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="cards">
+            {events.map((e) => (
+              <Card
+                key={e.id}
+                title={lookup.titles.get(e.titleId)!}
+                event={e}
+                followed={lookup.followed.has(e.titleId)}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        )}
       </div>
       {unknown.length > 0 && (
-        <div className="uncertain">
-          <div>
-            <h3>Dates to be announced</h3>
-            <p>
-              {unknown.length} releases have a broader window or no date. Follow
-              them to hear when a date is added.
-            </p>
-          </div>
-          <button onClick={() => setHorizon(true)}>
-            Explore the horizon →
-          </button>
-        </div>
+        <button className="horizon-link" onClick={() => setHorizon(true)}>
+          <span>
+            <b>{unknown.length}</b> without a release date yet
+          </span>
+          <Icon name="next" />
+        </button>
       )}
       {horizon && (
-        <Modal label="On the horizon" onClose={() => setHorizon(false)}>
+        <Modal label="Dates to be announced" onClose={() => setHorizon(false)}>
           <div className="dialog-top">
-            <h2>On the horizon</h2>
-            <button aria-label="Close" onClick={() => setHorizon(false)}>
-              ×
+            <h2>Dates to be announced</h2>
+            <button
+              className="icon-button"
+              aria-label="Close"
+              onClick={() => setHorizon(false)}
+            >
+              <Icon name="close" />
             </button>
           </div>
-          {unknown.map((e) => (
-            <div className="release-row" key={e.id}>
-              <button
-                className="text-button"
-                onClick={() => {
-                  setHorizon(false);
-                  const t = state.titles.find((t) => t.id === e.titleId);
-                  if (t) onSelect(t);
-                }}
-              >
-                {state.titles.find((t) => t.id === e.titleId)?.name} ↗
-              </button>
-              <small>
-                {dateLabel(e)} · {e.service || e.medium} · {e.status}
-              </small>
-            </div>
-          ))}
+          <p>Follow a title to hear when its date is announced.</p>
+          <ul className="sheet-list">
+            {unknown.map((e) => {
+              const t = lookup.titles.get(e.titleId)!;
+              return (
+                <li key={e.id}>
+                  <button
+                    className="sheet-item"
+                    onClick={() => {
+                      setHorizon(false);
+                      onSelect(t);
+                    }}
+                  >
+                    <span className="sheet-title">{t.name}</span>
+                    <span className="sheet-meta">
+                      <span className={`dot ${e.medium}`} aria-hidden="true" />
+                      {[dateLabel(e), channel(e), statusLabel[e.status]]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </Modal>
       )}
     </>
   );
 }
+
+/** Last submitted search, kept in LineupApp so it survives view switches. */
+export type SearchMemory = {
+  query: string;
+  searched: string;
+  results: Title[] | null;
+};
 export function SearchPage({
   state,
-  refresh,
+  lookup,
+  memory,
+  onSearched,
   onSelect,
   onError,
-}: Shared & { refresh: () => Promise<State>; onError: (e: unknown) => void }) {
-  const [query, setQuery] = useState(""),
-    [results, setResults] = useState<Title[] | null>(null),
+}: Shared & {
+  memory: SearchMemory;
+  onSearched: (m: SearchMemory) => void;
+  onError: (e: unknown) => void;
+}) {
+  const [query, setQuery] = useState(memory.query),
     [busy, setBusy] = useState(false);
+  const { results, searched } = memory;
   async function search(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
+      // /api/search returns the titles it found; nothing else in the app
+      // state changes, so there is no state refetch here.
       const titles = await api<Title[]>(
         "search?q=" + encodeURIComponent(query),
       );
-      await refresh();
-      setResults(titles);
+      onSearched({ query, searched: query.trim(), results: titles });
     } catch (error) {
       onError(error);
     } finally {
@@ -238,93 +368,102 @@ export function SearchPage({
   const titles = results ?? state.titles;
   return (
     <>
-      <Heading
-        title="Find a title."
-        subtitle="Search movies and series, then choose which releases to follow."
-      />
-      <form onSubmit={search}>
-        <input
-          className="search-input"
-          type="search"
-          aria-label="Search movies and TV"
-          placeholder="Search movies & TV series…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+      <Heading title="Search">
+        {!state.sources.tmdb && (
+          <p className="notice">
+            Sample catalogue only. <Link href="/settings">Connect TMDB</Link>{" "}
+            for live search.
+          </p>
+        )}
+      </Heading>
+      <form className="search-form" role="search" onSubmit={search}>
+        <span className="search-field">
+          <Icon name="search" />
+          <input
+            className="search-input"
+            type="search"
+            aria-label="Search movies and TV"
+            placeholder="Movies and TV series"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </span>
         <button className="primary" disabled={busy}>
-          {busy ? "Searching…" : "Search titles ↗"}
+          {busy ? "Searching…" : "Search"}
         </button>
       </form>
-      <p className="fineprint">
-        {state.sources.tmdb
-          ? "Searching the TMDB catalogue."
-          : "Sample catalogue only. Connect TMDB for live search."}
-      </p>
-      <div className="section-line">
-        <h3>{results ? "SEARCH RESULTS" : "A LITTLE INSPIRATION"}</h3>
-        <span>{titles.length} titles</span>
-      </div>
-      <div className="cards">
-        {titles.map((t) => (
-          <Card
-            key={t.id}
-            title={t}
-            event={state.releases.find(
-              (e) => e.titleId === t.id && e.market === state.settings.market,
-            )}
-            state={state}
-            onSelect={onSelect}
-          />
-        ))}
-      </div>
-      {!titles.length && (
-        <Empty title="No titles found.">
-          Try a different title or connect TMDB for the full catalogue.
+      {titles.length > 0 ? (
+        <>
+          <h2 className="list-label">
+            {results ? "Results" : "Suggestions"}
+            <span>{titles.length}</span>
+          </h2>
+          <div className="rows stagger">
+            {titles.map((t) => (
+              <Card
+                key={t.id}
+                layout="row"
+                title={t}
+                event={lookup.marketRelease.get(t.id)}
+                followed={lookup.followed.has(t.id)}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        </>
+      ) : (
+        <Empty title="No matches.">
+          {searched
+            ? `Nothing found for “${searched}”. Try another spelling.`
+            : "Try a different title."}
         </Empty>
       )}
     </>
   );
 }
-export function Following({ state, onSelect }: Shared) {
-  const ids = new Set(
-    state.subscriptions
-      .filter((s) => s.market === state.settings.market)
-      .map((s) => s.titleId),
-  );
+
+export function Following({ state, lookup, onSelect }: Shared) {
+  const items = useMemo(() => {
+    // First release per followed title that one of its subscriptions matches.
+    const event = new Map<string, Release>();
+    for (const e of state.releases)
+      if (
+        lookup.followed.has(e.titleId) &&
+        !event.has(e.titleId) &&
+        followedRelease(lookup, e)
+      )
+        event.set(e.titleId, e);
+    return state.titles
+      .filter((t) => lookup.followed.has(t.id))
+      .map((t) => [t, event.get(t.id)] as const);
+  }, [state.titles, state.releases, lookup]);
   return (
     <>
-      <Heading
-        title="Following."
-        subtitle={`Your followed releases in ${countries[state.settings.market]}. Dates may be unknown; you can follow anyway.`}
-      />
-      <div className="cards">
-        {state.titles
-          .filter((t) => ids.has(t.id))
-          .map((t) => (
+      <Heading title="Following" />
+      {items.length ? (
+        <div className="rows stagger">
+          {items.map(([t, e]) => (
             <Card
               key={t.id}
+              layout="row"
               title={t}
-              event={state.releases.find(
-                (e) =>
-                  e.titleId === t.id &&
-                  state.subscriptions.some((s) => matches(s, e)),
-              )}
-              state={state}
+              event={e}
+              followed
               onSelect={onSelect}
             />
           ))}
-      </div>
-      {!ids.size && (
+        </div>
+      ) : (
         <Empty
           title="Nothing followed yet."
           action={
             <Link href="/search" className="primary">
-              Discover something great ↗
+              Find a title
             </Link>
           }
         >
-          Follow a theatrical release or a streaming premiere. We’ll keep your
-          preferences even before a date is announced.
+          Follow a movie or series to see its dates here, even before
+          they’re announced in {countries[state.settings.market]}.
         </Empty>
       )}
     </>

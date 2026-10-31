@@ -1,106 +1,85 @@
 # Lineup
 
-A minimal personal movie and TV release tracker: near-black surfaces, white type, lilac actions, and channel-specific release notifications.
+A minimal personal movie and TV release tracker: near-black surfaces, white type, lilac actions, and per-channel release notifications.
 
-## Vercel deployment with Supabase and email
+Next.js 16 (App Router) · React 19 · TypeScript · Supabase PostgreSQL · Resend email.
 
-See [SUPABASE.md](SUPABASE.md) for database migration SQL, Vercel environment variables, Resend sender setup, and hourly Supabase Cron scheduling. Set DATABASE_URL to use PostgreSQL; local SQLite is the fallback for development. Email notifications are implemented for the PostgreSQL workflow.
+## Local setup
 
-## Start
-
-Requires Node.js 24+. Lineup now uses Next.js 16 App Router, React 19, and TypeScript. The server runs in the Node.js runtime with durable SQLite storage.
+Requires Node.js 24+ and a Supabase project.
 
 ```bash
 npm ci
-npm run dev
+cp .env.example .env        # then fill in DATABASE_URL
+npm run db:migrate          # creates the tables in Supabase (safe to re-run)
+npm run dev                 # http://127.0.0.1:3000
 ```
 
-For production:
+`DATABASE_URL` is the **Transaction pooler** URI from Supabase > Connect (port 6543, user `postgres.PROJECT_REF`), with the database password URL-encoded. TLS is fully verified; Supabase's root CA is bundled in [src/supabase-ca.ts](src/supabase-ca.ts) because Node does not ship it.
 
-```bash
-npm run build
-npm start
-```
+On first visit, create the single owner account. Everything (account, sessions, follows, settings, releases, notifications) lives in Supabase, so the same login works from any device pointed at the same database.
 
-Open http://localhost:3000 on the machine running the app. On first use, create the single owner account. Existing library data stays with that account. Subsequent visits require sign-in. The app stores account credentials, sessions, follows, settings, release history and notifications in SQLite; browser storage is not the source of truth.
-
-For access from other devices, deploy one HTTPS instance with a persistent disk and use that same URL everywhere. See [the deployment and API setup guide](DEPLOYMENT.md). No public instance has been deployed in this session.
-
-## Features
-
-- Monthly release agenda, poster/list views and theatrical/streaming filters.
-- Search, Following and Settings, with US/GB/LK market selection independent from reminder timezone.
-- Visual title popup with poster, title, synopsis, genre tags and channel/date rows.
-- Independent bell toggles for each streaming service or theatrical release, including unknown dates. Turning off one channel preserves others.
-- Notification rules and source/date corrections under expandable sections.
-- First-run owner setup; email/password sign-in; 30-day HTTP-only session cookies; sign-out and password change. Passwords use salted scrypt; session tokens are stored only as hashes. Failed sign-ins are rate-limited.
-- Durable follows, observations, manual corrections, material release revisions, notification deduplication and supersession of stale queued alerts.
-- In-app reminders for date announcements/changes and optional 7-day, 1-day and release-day alerts. Checks run on state requests and through the worker or protected scheduled endpoint.
-- Server-side TMDB integration for live title search, posters, metadata, series seasons, episodes and regional theatrical import. Each season is a distinct follow target. Original air dates do not automatically become regional streaming premieres.
-- No playback or provider storefront links.
+Production build: `npm run build && npm start`.
 
 ## Configuration
 
-Copy [.env.example](.env.example) to `.env.local` for local development, or configure secrets in your hosting environment. Next.js loads its standard environment files; the CLI worker/import scripts also read `.env.local` if present. Set `HOST`/`PORT` for the production launcher in your shell or host dashboard. Never change an existing `DB_PATH` without moving/backing up its database.
+See [.env.example](.env.example). All values are server-only.
 
-| Variable | Default / use |
+| Variable | Use |
 |---|---|
-| `HOST` | `127.0.0.1`; hosted services use `0.0.0.0` |
-| `PORT` | `3000`; use your host's injected value |
-| `DB_PATH` | `data/reel.sqlite`; use an absolute path on durable storage in production |
-| `COOKIE_SECURE` | Set `true` for hosted HTTPS; leave false for local HTTP |
-| `SETUP_KEY` | Required to protect first owner setup when hosted with secure cookies |
-| `TMDB_TOKEN` | Optional TMDB API Read Access Token for live catalogue/theatrical data |
-| `APP_TOKEN` | Optional privileged server-to-server API token; leave unset unless needed |
+| `DATABASE_URL` | **Required.** Supabase transaction-pooler URI |
+| `COOKIE_SECURE` | `true` on HTTPS hosts, `false` locally |
+| `SETUP_KEY` | Required to create the owner account on an HTTPS host |
+| `TMDB_TOKEN` | Optional TMDB read-access token: live search, posters, seasons, theatrical import |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Optional email reminders |
+| `CRON_SECRET` | Bearer secret for `/api/cron/reminders` |
+| `APP_TOKEN` | Optional server-to-server token; bypasses login, leave unset unless needed |
 
-Sample titles, dates and provider associations are illustrative, not verified. Sample rows are explicitly marked. Initial browsing opens November 2026 to match the research. Live credentials were not supplied, so real provider responses remain unverified.
+Deploying to Vercel, Resend setup and hourly Supabase Cron scheduling: [docs/SUPABASE.md](docs/SUPABASE.md).
 
-## Remaining integrations and limits
-
-- Movie of the Night streaming-premiere feed is not implemented yet. Add streaming dates with source-backed announcements for now.
-- Email delivery is implemented with PostgreSQL, Resend, and scheduled requests; see SUPABASE.md. Phone push and weekly digests are not implemented.
-- Theatrical import currently handles the first discovery page per month. Pagination and automatic source-refresh scheduling remain to be implemented.
-- A TVmaze adapter stores schedule observations only; market/offer verification and automatic scheduling are unfinished. Published use requires CC BY-SA attribution.
-- The reminder worker or Supabase Cron must run. PostgreSQL catches up checks for up to seven days; local SQLite checks only the current day. Persistent announcement/change jobs remain queued.
-- No email verification or forgotten-password email flow. This is one owner's library, not multi-user registration.
-- Use one process/instance with durable SQLite storage and backups. Do not place the database on an ephemeral filesystem. Multiple instances need a shared database migration.
-- Sri Lankan dates are unknown unless sourced locally. Selecting a market never substitutes another country's release date.
-- Complete TMDB official logo attribution before public distribution.
+## Scripts
 
 ```bash
-npm run import -- 2026-11 US   # TMDB_TOKEN required
-npm run worker                # one reminder/outbox pass
-```
-
-## Checks
-
-```bash
+npm run dev                    # development server
+npm run build && npm start     # production server
 npm run typecheck
-npm run build
-npm test
-python tests/api_smoke.py
-python tests/auth_smoke.py
-python tests/ui_smoke.py
-python tests/migration_smoke.py
+npm test                       # unit tests (+ Postgres tests when TEST_DATABASE_URL is set)
+npm run db:migrate             # apply supabase/migrations to DATABASE_URL
+npm run import -- 2026-11 US   # import a month of TMDB theatrical dates (TMDB_TOKEN required)
+npm run worker                 # one reminder/email pass
 ```
 
-Build the production app before running the Python integration checks; they launch isolated `next start` instances.
+The Postgres suite in [tests/postgres.test.ts](tests/postgres.test.ts) runs only against a disposable local database named `lineup_test` (it truncates tables and refuses remote hosts):
 
-The eight behavior tests cover event matching, date-only/Colombo timing, unknown-date follows, revisions, corrections, deduplication and independent service follows. HTTP tests cover protected routes, source editing, preferences and channel subscriptions. Authentication tests verify two-client persistence, server restarts, session revocation and rate limiting. Browser tests use Playwright and an installed Chromium to check sign-up/sign-in, cross-client follow persistence, popup actions, mobile sizing and sign-out. They use isolated temporary databases, not the owner's library. Browser dependencies are only needed to run the browser checks. The migration test verifies an existing-format library and session are accepted without database/schema reset.
+```bash
+TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/lineup_test npm test
+```
 
-## Source
+Create `anon` and `authenticated` roles in that database first to mirror Supabase.
 
-- `app/`: App Router pages, global styles, and Node.js API route handler.
-- `src/components/`: typed React screens, login, title popup, channel controls, and forms.
-- `src/lib/api.ts`, `src/lib/runtime.ts`: API dispatch and the singleton SQLite/auth/reminder runtime.
-- `src/auth.ts`: owner account, hashed credentials, cookie sessions and rate limits.
-- `src/model.ts`, `src/store.ts`: release semantics, SQLite persistence and outbox.
-- `scripts/start.mjs`: production Next.js launcher respecting `HOST` and `PORT`.
-- `src/providers.ts`: TMDB adapter and TVmaze observation scaffold.
-- `src/seed.ts`: illustrative catalogue.
-- `tests/`: behavior, API, authentication and browser checks.
-- [RESEARCH.md](RESEARCH.md): original product research.
+## Features
 
-The Next.js migration preserves the existing database filename, owner/session tables, release semantics and notification behavior. The legacy static UI and custom HTTP server have been removed. Production hosting still requires one always-on Node.js instance with a persistent disk; this SQLite build is not suitable for ephemeral serverless filesystems. No Site or public deployment has been provisioned.
+- Monthly release agenda, poster/list views and theatrical/streaming filters; US/GB/LK markets independent of reminder timezone.
+- Search, Following and Settings pages; title popup with poster, synopsis, tags and per-channel date rows.
+- Independent bell per streaming service or theatrical release, including dates not yet announced.
+- Source-backed manual dates and corrections; material changes create revisions and supersede stale alerts.
+- In-app reminders for announcements, changes and 7-day / 1-day / release-day alerts; email via Resend.
+- Single owner account: scrypt password hashes, hashed 30-day HttpOnly session cookies, rate-limited sign-in.
 
-See [HANDOFF.md](HANDOFF.md) for product decisions and remaining integrations.
+## Known limits
+
+- Streaming-premiere feed (e.g. Movie of the Night) is not implemented; add streaming dates manually with a source.
+- TMDB theatrical import reads only the first discovery page per month.
+- No password-reset email, push notifications or weekly digest.
+- Sample titles are illustrative and marked as samples. Sri Lankan dates are never substituted from other markets.
+- Complete TMDB logo attribution before public distribution.
+
+## Layout
+
+- `app/` — routes, global styles, `/api/[...path]` and `/api/cron/reminders`.
+- `src/components/` — React UI.
+- `src/lib/` — API dispatch and the per-process runtime (store + auth).
+- `src/postgres-store.ts`, `src/model.ts` — persistence, release semantics and notification outbox.
+- `src/auth.ts`, `src/email.ts`, `src/providers.ts` — owner auth, Resend delivery, TMDB adapter.
+- `supabase/` — SQL migrations, migrate script and the hourly cron schedule.
+- [docs/RESEARCH.md](docs/RESEARCH.md) — original product research.

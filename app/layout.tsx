@@ -1,8 +1,30 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./styles/base.css";
+import "./styles/shell.css";
+import "./styles/browse.css";
+import "./styles/details.css";
+import "./styles/account.css";
+const sans = Geist({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
+const mono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+});
 export const metadata: Metadata = {
   title: "Lineup — Your next watch, all lined up",
   description: "Your personal theatrical and streaming release tracker.",
+};
+// viewport-fit=cover lets env(safe-area-inset-*) pad the tab bar and bottom sheet on iOS.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0a0a0b",
 };
 export default function RootLayout({
   children,
@@ -10,8 +32,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+      {/* Browser extensions (e.g. Grammarly) add attributes to <body> before hydration. */}
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

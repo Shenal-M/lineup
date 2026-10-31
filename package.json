@@ -5,16 +5,18 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build --webpack",
-    "start": "node scripts/start.mjs",
+    "start": "next start --hostname 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "test": "node --disable-warning=ExperimentalWarning tests/releases.test.ts",
-    "worker": "node --env-file-if-exists=.env.local src/worker.ts",
-    "import": "node --env-file-if-exists=.env.local src/import.ts"
+    "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.ts",
+    "db:migrate": "node --env-file-if-exists=.env --env-file-if-exists=.env.local supabase/migrate.ts",
+    "worker": "node --env-file-if-exists=.env --env-file-if-exists=.env.local src/worker.ts",
+    "import": "node --env-file-if-exists=.env --env-file-if-exists=.env.local src/import.ts"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
+    "lucide-react": "^1.65.0",
     "next": "^16.4.3",
     "postgres": "^3.4.9",
     "react": "^19.3.1",

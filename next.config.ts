@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 const config: NextConfig = {
   poweredByHeader: false,
+  // The dev-only route indicator overlaps the mobile tab bar and sidebar profile.
+  devIndicators: false,
   async headers() {
     return [
       {

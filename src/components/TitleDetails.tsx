@@ -1,6 +1,7 @@
 "use client";
-import { useRef, useState, type FormEvent } from "react";
-import { Bell, Modal, Poster } from "./ui";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ExternalLink, Plus } from "lucide-react";
+import { Bell, Icon, Modal, Poster } from "./ui";
 import {
   api,
   countries,
@@ -11,7 +12,6 @@ import {
   type State,
   type Title,
   type Release,
-  type Subscription,
 } from "./types";
 import type { Medium } from "../model";
 type Props = {
@@ -23,6 +23,19 @@ type Props = {
   notify: (s: string) => void;
   onError: (e: unknown) => void;
 };
+// Titles (per market) with a follow change in flight. Module-level so the
+// guard survives closing and reopening the dialog mid-request: two channels can
+// share a subscription record, so a second POST/DELETE must wait.
+const toggling = new Set<string>();
+// A follow change saved but the refetch failed: the subscriptions list it was
+// based on is stale, so the next toggle (in any remount) resyncs first.
+const staleAgainst = new Map<string, State["subscriptions"]>();
+const flaggedStatuses = [
+  "estimated",
+  "postponed",
+  "cancelled",
+  "first_observed",
+];
 export function TitleDetails({
   title: t,
   state,
@@ -33,8 +46,13 @@ export function TitleDetails({
   onError,
 }: Props) {
   const [editor, setEditor] = useState<Release | null | undefined>(undefined),
-    [busy, setBusy] = useState("");
-  const other = useRef<HTMLDetailsElement>(null);
+    [busy, setBusy] = useState(""),
+    // Optimistic bell state per channel while its request is in flight.
+    [pending, setPending] = useState<Record<string, boolean>>({}),
+    [expanded, setExpanded] = useState(false),
+    [clamped, setClamped] = useState(false);
+  const more = useRef<HTMLDetailsElement>(null),
+    synopsis = useRef<HTMLParagraphElement>(null);
   const market = state.settings.market,
     events = state.releases.filter(
       (e) => e.titleId === t.id && e.market === market,
@@ -45,6 +63,19 @@ export function TitleDetails({
   const [selectedRules, setSelectedRules] = useState<string[]>(
     subscriptions[0]?.rules || defaultRules,
   );
+  useEffect(() => setExpanded(false), [t.id]);
+  // Fresh subscriptions supersede optimistic bells kept after a failed refetch.
+  useEffect(() => setPending({}), [state.subscriptions]);
+  // Measure after the dialog opens (and on resize): only offer "More" when the
+  // synopsis actually overflows its clamp.
+  useEffect(() => {
+    const el = synopsis.current;
+    if (!el) return;
+    const check = () => setClamped(el.scrollHeight > el.clientHeight + 1);
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [t.id, t.synopsis]);
   function selected(medium: Medium, service: string | null) {
     return subscriptions.filter(
       (s) =>
@@ -52,39 +83,79 @@ export function TitleDetails({
         (service ? s.services.includes(service) : !s.services.length),
     );
   }
-  async function toggle(medium: Medium, service: string | null) {
-    const existing = selected(medium, service);
-    setBusy(`${medium}:${service}`);
+  async function toggle(medium: Medium, service: string | null, extra = false) {
+    // One change at a time per title, even across dialog remounts.
+    const lock = `${t.id}:${market}`;
+    if (toggling.has(lock) || busy) return;
+    if (staleAgainst.get(lock) === state.subscriptions) {
+      // Resync first; the bells re-render from fresh state for the next tap.
+      refresh().catch(onError);
+      return;
+    }
+    staleAgainst.delete(lock);
+    toggling.add(lock);
+    const existing = selected(medium, service),
+      key = `${medium}:${service}`;
+    setBusy(key);
+    // Flip the bell now; the server round-trip confirms (or reverts) it.
+    setPending((p) => ({ ...p, [key]: !existing.length }));
+    let keepPending = false;
     try {
-      if (existing.length) {
-        for (const s of existing) {
-          const rest = service ? s.services.filter((x) => x !== service) : [];
-          if (rest.length)
-            await api("subscriptions", "POST", { ...s, services: rest });
-          else await api("subscriptions/" + encodeURIComponent(s.id), "DELETE");
-        }
-      } else
-        await api("subscriptions", "POST", {
-          titleId: t.id,
-          market,
-          medium,
-          services: service ? [service] : [],
-          rules: subscriptions[0]?.rules || selectedRules,
-          scope: "channel",
-        });
-      await refresh();
-      if (other.current) other.current.open = false;
+      try {
+        if (existing.length)
+          await Promise.all(
+            existing.map((s) => {
+              const rest = service
+                ? s.services.filter((x) => x !== service)
+                : [];
+              return rest.length
+                ? api("subscriptions", "POST", { ...s, services: rest })
+                : api("subscriptions/" + encodeURIComponent(s.id), "DELETE");
+            }),
+          );
+        else
+          await api("subscriptions", "POST", {
+            titleId: t.id,
+            market,
+            medium,
+            services: service ? [service] : [],
+            rules: subscriptions[0]?.rules || selectedRules,
+            scope: "channel",
+          });
+      } catch (error) {
+        // A partial failure may have changed some records; resync, then revert.
+        await refresh().catch(() => {});
+        onError(error);
+        return;
+      }
       notify(
         existing.length
           ? "Channel notifications turned off"
           : "Channel notifications turned on",
       );
-    } catch (error) {
-      onError(error);
+      try {
+        await refresh();
+        // A newly tracked extra service moves up into the release list.
+        if (extra && more.current) more.current.open = false;
+      } catch (error) {
+        // Saved, but the refetch failed: keep the optimistic bell (it matches
+        // the server) and resync before the next change.
+        staleAgainst.set(lock, state.subscriptions);
+        keepPending = true;
+        onError(error);
+      }
     } finally {
+      if (!keepPending)
+        setPending((p) => {
+          const next = { ...p };
+          delete next[key];
+          return next;
+        });
+      toggling.delete(lock);
       setBusy("");
     }
   }
+
   async function saveRules(e: FormEvent) {
     e.preventDefault();
     if (!subscriptions.length) {
@@ -93,8 +164,11 @@ export function TitleDetails({
     }
     setBusy("rules");
     try {
-      for (const s of subscriptions)
-        await api("subscriptions", "POST", { ...s, rules: selectedRules });
+      await Promise.all(
+        subscriptions.map((s) =>
+          api("subscriptions", "POST", { ...s, rules: selectedRules }),
+        ),
+      );
       await refresh();
       notify("Notification preferences saved");
     } catch (error) {
@@ -122,50 +196,59 @@ export function TitleDetails({
     medium: Medium,
     service: string | null,
     dates: Release[],
-    label = service || "In cinemas",
+    { label = service || "In cinemas", extra = false } = {},
   ) {
-    const on = selected(medium, service).length > 0;
+    const key = `${medium}:${service}`,
+      on = pending[key] ?? selected(medium, service).length > 0;
     return (
-      <div className="channel-row" key={`${medium}:${service}`}>
-        <span className="channel-monogram" aria-hidden="true">
-          {medium === "theatrical" ? "▤" : service ? service.slice(0, 1) : "◎"}
-        </span>
+      <li className="channel-row" key={key}>
+        {service ? (
+          <span className="channel-mark" aria-hidden="true">
+            {service.slice(0, 1)}
+          </span>
+        ) : (
+          <span
+            className={`channel-mark is-dot ${medium}`}
+            aria-hidden="true"
+          />
+        )}
         <span className="channel-name">{label}</span>
-        <div className="channel-dates">
-          {dates.length ? (
-            dates.map((e) => (
-              <div key={e.id} className="channel-date">
-                <span className={e.date ? "" : "date-tba"}>{dateLabel(e)}</span>
-                {e.date &&
-                  [
-                    "estimated",
-                    "postponed",
-                    "cancelled",
-                    "first_observed",
-                  ].includes(e.status) && (
-                    <small
-                      className={`date-status ${e.status === "estimated" ? "estimated" : ""}`}
-                    >
+        {!extra && (
+          <span className="channel-dates">
+            {dates.length ? (
+              dates.map((e) => (
+                <span key={e.id} className="channel-date">
+                  {e.date && flaggedStatuses.includes(e.status) && (
+                    <small className="date-status">
                       {e.status.replace("_", " ")}
                     </small>
                   )}
-              </div>
-            ))
-          ) : (
-            <span className="date-tba">Date TBA</span>
-          )}
-        </div>
+                  {e.date ? (
+                    dateLabel(e)
+                  ) : (
+                    <span className="date-tba">TBA</span>
+                  )}
+                </span>
+              ))
+            ) : (
+              <span className="date-tba">TBA</span>
+            )}
+          </span>
+        )}
         <button
-          className={`channel-toggle ${on ? "is-on" : ""}`}
-          disabled={!!busy}
+          type="button"
+          className={`bell-toggle ${on ? "is-on" : ""}`}
           aria-pressed={on}
+          aria-busy={busy === key || undefined}
           aria-label={`Notifications for ${label}`}
-          onClick={() => void toggle(medium, service)}
+          title={
+            on ? "Following — tap to stop" : "Notify me, even before a date"
+          }
+          onClick={() => void toggle(medium, service, extra)}
         >
-          <Bell />
-          <span>{on ? "Following" : "Notify me"}</span>
+          <Bell on={on} />
         </button>
-      </div>
+      </li>
     );
   }
   const shownServices = [
@@ -179,10 +262,12 @@ export function TitleDetails({
     ]),
   ];
   const extraServices = services.filter((s) => !shownServices.includes(s));
-  const tags = [
-    t.mediaType === "tv" ? "TV series" : "Movie",
-    t.year,
-    ...(t.genre || "").split(" · "),
+  const meta = [
+    t.mediaType === "tv" ? "TV" : "Movie",
+    t.season ? `Season ${t.season}` : null,
+    t.season && t.episodes?.length ? `${t.episodes.length} episodes` : null,
+    t.season ? null : t.year,
+    (t.genre || "").split(" · ").filter(Boolean).join(", "),
   ].filter(Boolean);
   if (editor !== undefined)
     return (
@@ -207,176 +292,217 @@ export function TitleDetails({
       className="title-dialog"
       onClose={onClose}
     >
+      <span className="sheet-handle" aria-hidden="true" />
       <button
-        className="detail-close"
+        type="button"
+        className="detail-close icon-button"
         aria-label="Close details"
         onClick={onClose}
       >
-        ×
+        <Icon name="close" />
       </button>
-      <section className="title-overview">
-        <div className="detail-poster">
-          <Poster title={t} />
-        </div>
-        <div className="title-copy">
-          {t.demo && <span className="sample-label">Sample title & dates</span>}
-          <h2>{t.name}</h2>
-          <div className="title-tags">
-            {tags.map((tag, i) => (
-              <span key={i}>{tag}</span>
-            ))}
+      <div className="title-body">
+        <section className="title-overview">
+          <div className="detail-poster">
+            <Poster title={t} />
           </div>
-          <p className="title-description">
-            {t.synopsis || "No description available yet."}
-          </p>
-          {t.credit && <span className="title-credit">{t.credit}</span>}
-          {!!t.seasons?.length && (
-            <>
-              <label className="sr-only" htmlFor="season-number">
-                Season
-              </label>
-              <select
-                id="season-number"
-                defaultValue=""
-                disabled={busy === "season"}
-                onChange={(e) => void season(e.target.value)}
-              >
-                <option value="">Choose a season</option>
-                {t.seasons.map((s) => (
-                  <option key={s.number} value={s.number}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
-        </div>
-      </section>
-      <section className="release-channels">
-        <div className="channels-heading">
-          <h3>Release dates</h3>
-          <span>
-            {market} · {countries[market]}
-          </span>
-        </div>
-        {(t.mediaType !== "tv" ||
-          events.some((e) => e.medium === "theatrical")) &&
-          channelRow(
-            "theatrical",
-            null,
-            events.filter((e) => e.medium === "theatrical"),
-          )}
-        {shownServices.map((service) =>
-          channelRow(
-            "streaming",
-            service,
-            events.filter(
-              (e) => e.medium === "streaming" && e.service === service,
-            ),
-          ),
-        )}
-        {channelRow(
-          "streaming",
-          null,
-          events.filter((e) => e.medium === "streaming" && !e.service),
-          "Any streaming service",
-        )}
-        {extraServices.length > 0 && (
-          <details className="other-channels" ref={other}>
-            <summary>
-              Track a specific streaming channel{" "}
-              <span>+ {extraServices.length}</span>
-            </summary>
-            {extraServices.map((service) =>
-              channelRow("streaming", service, []),
+          <div className="title-copy">
+            <div className="title-head">
+              <h2>{t.name}</h2>
+              {t.demo && <span className="sample-badge">Sample</span>}
+            </div>
+            {meta.length > 0 && (
+              <p className="title-meta">{meta.join(" · ")}</p>
             )}
-          </details>
-        )}
-        <p className="channel-hint">
-          Tap the bell to follow a channel, even before a date is announced.
-        </p>
-      </section>
-      <div className="detail-secondary">
-        <details className="reminder-options">
-          <summary>Notification preferences</summary>
-          <form onSubmit={saveRules}>
-            <div className="reminder-checks">
-              {rules.map(([value, label]) => (
-                <label key={value}>
-                  <input
-                    type="checkbox"
-                    value={value}
-                    checked={selectedRules.includes(value)}
-                    onChange={(e) =>
-                      setSelectedRules((prev) =>
-                        e.target.checked
-                          ? [...prev, value]
-                          : prev.filter((v) => v !== value),
-                      )
-                    }
-                  />
-                  {label}
+            {!!t.seasons?.length && (
+              <div className="season-pick">
+                <label className="sr-only" htmlFor="season-number">
+                  Season
                 </label>
-              ))}
-            </div>
-            <button className="primary" disabled={!!busy}>
-              Save preferences
-            </button>
-          </form>
-          <small>
-            Delivered to your in-app inbox. Email and push are not connected.
-          </small>
-        </details>
-        <details className="release-sources">
-          <summary>Sources & date corrections</summary>
-          {events.map((e) => (
-            <div className="source-entry" key={e.id}>
-              <div>
-                <strong>
-                  {e.service ||
-                    (e.medium === "theatrical" ? "In cinemas" : "Streaming")}
-                </strong>
-                <small>
-                  {e.source}
-                  {e.sourceUrl && (
-                    <>
-                      {" "}
-                      ·{" "}
-                      <a
-                        href={e.sourceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Source ↗
-                      </a>
-                    </>
-                  )}
-                </small>
+                <select
+                  id="season-number"
+                  key={t.id}
+                  defaultValue=""
+                  disabled={busy === "season"}
+                  onChange={(e) => void season(e.target.value)}
+                >
+                  <option value="">Choose a season</option>
+                  {t.seasons.map((s) => (
+                    <option key={s.number} value={s.number}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <button onClick={() => setEditor(e)}>Edit</button>
-            </div>
-          ))}
-          <button className="text-button" onClick={() => setEditor(null)}>
-            + Add release date
-          </button>
+            )}
+            <p
+              ref={synopsis}
+              id="title-synopsis"
+              className={`title-description ${expanded ? "" : "is-clamped"}`}
+            >
+              {t.synopsis || "No description available yet."}
+            </p>
+            {(clamped || expanded) && (
+              <button
+                type="button"
+                className="text-button synopsis-toggle"
+                aria-expanded={expanded}
+                aria-controls="title-synopsis"
+                onClick={() => setExpanded((v) => !v)}
+              >
+                {expanded ? "Less" : "More"}
+              </button>
+            )}
+          </div>
+        </section>
+        <section className="release-channels" aria-labelledby="release-dates">
+          <div className="channels-heading">
+            <h3 id="release-dates">Release dates</h3>
+            <span title={countries[market]}>{market}</span>
+          </div>
+          <ul className="channel-list">
+            {(t.mediaType !== "tv" ||
+              events.some((e) => e.medium === "theatrical")) &&
+              channelRow(
+                "theatrical",
+                null,
+                events.filter((e) => e.medium === "theatrical"),
+              )}
+            {shownServices.map((service) =>
+              channelRow(
+                "streaming",
+                service,
+                events.filter(
+                  (e) => e.medium === "streaming" && e.service === service,
+                ),
+              ),
+            )}
+            {channelRow(
+              "streaming",
+              null,
+              events.filter((e) => e.medium === "streaming" && !e.service),
+              { label: "Any streaming service" },
+            )}
+          </ul>
+        </section>
+        <details className="detail-more" ref={more}>
+          <summary>More options</summary>
+          <div className="more-panel">
+            {extraServices.length > 0 && (
+              <section className="more-section">
+                <h4>Track another service</h4>
+                <ul className="channel-list is-compact">
+                  {extraServices.map((service) =>
+                    channelRow("streaming", service, [], { extra: true }),
+                  )}
+                </ul>
+              </section>
+            )}
+            <section className="more-section">
+              <h4>Notify me when</h4>
+              <form onSubmit={saveRules}>
+                <div className="reminder-checks">
+                  {rules.map(([value, label]) => (
+                    <label key={value}>
+                      <input
+                        type="checkbox"
+                        value={value}
+                        checked={selectedRules.includes(value)}
+                        onChange={(e) =>
+                          setSelectedRules((prev) =>
+                            e.target.checked
+                              ? [...prev, value]
+                              : prev.filter((v) => v !== value),
+                          )
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <div className="more-actions">
+                  <small>Sent to your in-app inbox.</small>
+                  <button disabled={!!busy}>Save</button>
+                </div>
+              </form>
+            </section>
+            <section className="more-section">
+              <h4>Sources</h4>
+              {events.length > 0 && (
+                <ul className="source-list">
+                  {events.map((e) => (
+                    <li className="source-entry" key={e.id}>
+                      <div>
+                        <strong>
+                          {e.service ||
+                            (e.medium === "theatrical"
+                              ? "In cinemas"
+                              : "Streaming")}
+                        </strong>
+                        <small>
+                          {e.source}
+                          {e.sourceUrl && (
+                            <>
+                              {" · "}
+                              <a
+                                href={e.sourceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Source
+                                <ExternalLink
+                                  size={11}
+                                  strokeWidth={1.75}
+                                  aria-hidden="true"
+                                />
+                              </a>
+                            </>
+                          )}
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        aria-label={`Edit ${e.service || (e.medium === "theatrical" ? "cinema" : "streaming")} date`}
+                        onClick={() => setEditor(e)}
+                      >
+                        Edit
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button
+                type="button"
+                className="text-button add-date"
+                onClick={() => setEditor(null)}
+              >
+                <Plus size={14} strokeWidth={1.75} aria-hidden="true" />
+                Add or correct a date
+              </button>
+            </section>
+            {!!t.episodes?.length && (
+              <section className="more-section">
+                <h4>
+                  Episodes <span>{t.episodes.length}</span>
+                </h4>
+                <ol className="episode-list">
+                  {t.episodes.map((e) => (
+                    <li key={e.number}>
+                      <span>
+                        {e.number}. {e.name}
+                      </span>
+                      <small>{e.originalAirDate || "TBA"}</small>
+                    </li>
+                  ))}
+                </ol>
+                <small className="more-note">
+                  Original air dates; local streaming dates may differ.
+                </small>
+              </section>
+            )}
+          </div>
         </details>
       </div>
-      {!!t.episodes?.length && (
-        <details className="episode-list">
-          <summary>
-            Episodes <span>{t.episodes.length}</span>
-          </summary>
-          {t.episodes.map((e) => (
-            <div className="source-row" key={e.number}>
-              <span>
-                {e.number}. {e.name}
-              </span>
-              <small>{e.originalAirDate || "TBA"}</small>
-            </div>
-          ))}
-          <small>Original air dates; local streaming dates may differ.</small>
-        </details>
-      )}
     </Modal>
   );
 }

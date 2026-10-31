@@ -4,9 +4,15 @@ Lineup supports Supabase PostgreSQL for durable serverless storage and Resend fo
 
 ## 1. Create database tables
 
-In Supabase SQL Editor, run `supabase/migrations/202610290001_lineup.sql`. It is repeatable and does not reset existing tables. RLS is enabled and API-role access is revoked: the backend connects directly as the database owner. Do not grant these tables to browser clients.
+In Supabase **Connect**, choose **Transaction pooler** and copy its PostgreSQL URI (typically port 6543, user `postgres.PROJECT_REF`). Replace the password placeholder with the database password, URL-encoded if it contains special characters. Use the provided pooler hostname, not the direct IPv6-only database hostname. Put it in `.env` as `DATABASE_URL`, then run:
 
-In Supabase **Connect**, choose **Transaction pooler** and copy its PostgreSQL URI (typically port 6543, user `postgres.PROJECT_REF`). Replace the password placeholder with the database password, URL-encoded if it contains special characters. Use the provided pooler hostname, not the direct IPv6-only database hostname. Keep TLS verification enabled. If connection verification fails, diagnose trust/hostname rather than disabling TLS.
+```bash
+npm run db:migrate
+```
+
+This applies `supabase/migrations/*.sql` (you can also paste them into the SQL Editor). Migrations are repeatable and never reset existing tables. RLS is enabled and API-role access is revoked: the backend connects directly as the database owner. Do not grant these tables to browser clients.
+
+TLS verification stays enabled. Supabase certificates chain to its own "Supabase Root 2021 CA", which is bundled in `src/supabase-ca.ts` and trusted alongside Node's default CAs. Without it, connections fail with `SELF_SIGNED_CERT_IN_CHAIN`; do not work around that by disabling TLS.
 
 ## 2. Vercel environment variables
 
@@ -22,7 +28,7 @@ Add these in Project Settings > Environment Variables for Production, then redep
 | `CRON_SECRET` | A separate long random secret for scheduled requests |
 | `TMDB_TOKEN` | Optional: TMDB read-access token for live search and manual theatrical imports |
 
-Generate SETUP_KEY and CRON_SECRET separately with `openssl rand -hex 32`. Do not share credentials in chat, commit them, or use NEXT_PUBLIC_ prefixes. `DB_PATH`, HOST, PORT and APP_TOKEN are unnecessary for Vercel. Do not point preview deployments at the production database; give them an isolated database and no production email credentials.
+Generate SETUP_KEY and CRON_SECRET separately with `openssl rand -hex 32`. Do not share credentials in chat, commit them, or use NEXT_PUBLIC_ prefixes. APP_TOKEN is unnecessary for Vercel. Do not point preview deployments at the production database; give them an isolated database and no production email credentials.
 
 Use Node.js 24.x in Vercel. Build command: `npm run build`; install: `npm ci`. Set Vercel Function Region to US East if your Supabase project is North Virginia. Open your site, enter SETUP_KEY at first owner creation, and use the email address that should receive reminders. Save your password securely: password-reset email is not implemented. Supabase itself does not send these release emails.
 
@@ -49,14 +55,12 @@ Live release-data refresh is separate: TMDB search and manual theatrical import 
 
 ## Local development and verification
 
-Without DATABASE_URL, local SQLite remains supported for inbox behavior. Scheduled emails require PostgreSQL. Use `.env.local` for local secrets (ignored by Git). Never test against the production database.
+`DATABASE_URL` is required; there is no local database fallback. Keep local secrets in `.env` or `.env.local` (both ignored by Git). Ideally point local development at a separate Supabase project from production, and never run tests against the production database.
 
-Run `npm run typecheck`, `npm test`, `npm run build`, then the Python API, auth, migration and browser smoke tests documented in README, plus `python tests/cron_smoke.py`. For a disposable local PostgreSQL database named `lineup_test`, create `anon` and `authenticated` roles to simulate Supabase and run:
+Run `npm run typecheck`, `npm test` and `npm run build`. For the PostgreSQL suite, use a disposable local database named `lineup_test` with `anon` and `authenticated` roles created to simulate Supabase:
 
 ```sh
-TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/lineup_test node --test tests/postgres.test.ts
+TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/lineup_test npm test
 ```
 
 This test truncates its local test tables. Its guard rejects remote hosts and other database names. Only this explicit local test path permits a non-TLS PostgreSQL connection. Production always verifies TLS.
-
-Existing SQLite data is not automatically copied to Supabase. Back up the SQLite file and WAL safely before any separate data-migration operation; setting DATABASE_URL selects a new database and does not import an existing account or library. Never delete the old database until migration is verified.

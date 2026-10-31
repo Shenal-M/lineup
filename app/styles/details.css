@@ -1,0 +1,552 @@
+/* Dialogs and the title details popup. */
+/* ---------- Dialogs ---------- */
+dialog {
+  width: min(520px, calc(100% - 32px));
+  max-height: min(85vh, 820px);
+  padding: 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-modal);
+  background: var(--surface-1);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+}
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(2px);
+}
+.dialog-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+dialog h2 {
+  font-size: 20px;
+}
+dialog > p {
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+dialog form > .primary {
+  margin-top: 20px;
+}
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+.split label {
+  margin-top: 12px;
+}
+
+/* ---------- Title details ---------- */
+/* The dialog is a fixed frame; .title-body scrolls so the close button
+   (and the mobile grab handle) stay put. */
+.title-dialog {
+  width: min(720px, calc(100% - 32px));
+  max-height: min(88vh, 840px);
+  padding: 0;
+  overflow: hidden;
+}
+.title-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.title-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 28px;
+}
+.sheet-handle {
+  display: none;
+}
+.detail-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  background: var(--surface-1);
+}
+
+/* Layer 1: poster, title, meta, synopsis */
+.title-overview {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+.title-copy {
+  min-width: 0;
+  padding-right: 32px;
+}
+.title-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.title-dialog h2 {
+  min-width: 0;
+  font-size: 24px;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.sample-badge {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font: 500 10px/1.5 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.title-meta {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.season-pick {
+  margin-top: 12px;
+}
+#season-number {
+  width: auto;
+  max-width: 100%;
+  height: 32px;
+  font-size: 13px;
+}
+.title-description {
+  margin-top: 14px;
+  line-height: 1.6;
+}
+/* Four lines on desktop roughly match the poster's height. */
+.title-description.is-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.synopsis-toggle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* Layer 1: release dates per channel */
+.release-channels {
+  margin-top: 28px;
+}
+.channels-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.channels-heading h3 {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+.channels-heading > span {
+  font: 11px var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+.channel-list,
+.source-list,
+.episode-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.channel-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.channel-row > .bell-toggle {
+  grid-column: -2;
+}
+.channel-mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-2);
+}
+.channel-mark.is-dot {
+  background: none;
+}
+.channel-mark.is-dot::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--streaming);
+}
+.channel-mark.is-dot.theatrical::after {
+  background: var(--theatrical);
+}
+.channel-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+.channel-dates {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.channel-date {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.date-tba {
+  color: var(--text-3);
+}
+.date-status {
+  font: 500 10px var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Bell toggle: icon-only; amber when following. */
+.bell-toggle {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-3);
+  transition:
+    background-color 150ms var(--ease-out),
+    border-color 150ms var(--ease-out),
+    color 150ms var(--ease-out),
+    transform 100ms var(--ease-out);
+}
+.bell-toggle:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.bell-toggle.is-on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Layer 2: one "More options" disclosure */
+.detail-more {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.detail-more > summary {
+  width: fit-content;
+  color: var(--text-3);
+}
+.detail-more[open] > summary {
+  margin-bottom: 16px;
+  color: var(--text-2);
+}
+.detail-more[open] > .more-panel {
+  animation: panel-in 180ms var(--ease-out);
+}
+.more-section + .more-section {
+  margin-top: 24px;
+}
+.more-section h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.more-section h4 > span {
+  margin-left: 4px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.channel-list.is-compact .channel-row {
+  min-height: 40px;
+  padding: 4px 0;
+}
+.reminder-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px 16px;
+  padding-top: 4px;
+}
+.reminder-checks label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 400;
+  color: var(--text);
+  cursor: pointer;
+}
+.more-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+.more-actions button {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 14px;
+}
+.source-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.source-entry > div {
+  min-width: 0;
+}
+.source-entry strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+}
+.source-entry small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.source-entry a {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+.source-entry button {
+  flex: none;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.add-date {
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.episode-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.episode-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.episode-list small {
+  flex: none;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.more-note {
+  display: block;
+  margin-top: 8px;
+}
+
+@media (hover: hover) {
+  .synopsis-toggle:hover:not(:disabled),
+  .add-date:hover:not(:disabled) {
+    color: var(--text);
+  }
+  .bell-toggle:hover:not(:disabled):not(.is-on) {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .bell-toggle.is-on:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+}
+
+/* ---------- Motion ---------- */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+/* ---------- Mobile: every dialog becomes a bottom sheet ---------- */
+@media (max-width: 760px) {
+  dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 92vh;
+    max-height: 92dvh;
+    margin: auto 0 0;
+    padding: 28px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+    border-bottom: 0;
+    border-radius: var(--r-modal) var(--r-modal) 0 0;
+  }
+  dialog[open] {
+    animation: sheet-in 260ms var(--ease-out);
+  }
+  /* Grab handle: the title sheet renders its own (it must stay above the
+     scrolling body); other sheets draw it at the top of their content. */
+  dialog:not(.title-dialog)::before,
+  .sheet-handle {
+    content: "";
+    display: block;
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    z-index: 1;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--surface-3);
+    transform: translateX(-50%);
+  }
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .title-dialog {
+    width: 100%;
+    max-height: 92vh;
+    max-height: 92dvh;
+    padding: 0;
+  }
+  .title-body {
+    padding: 28px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+  .detail-close,
+  .dialog-top .icon-button {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+  .detail-close {
+    top: 10px;
+    right: 4px;
+  }
+  .dialog-top .icon-button {
+    margin-right: -8px;
+  }
+  /* Title and meta sit together at the top of the poster's height; the last
+     (flexible) row absorbs the rest instead of spacing them apart. */
+  .title-overview {
+    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr;
+    gap: 0 14px;
+  }
+  #season-number {
+    height: 36px;
+    font-size: 16px;
+  }
+  .title-dialog h2 {
+    font-size: 18px;
+  }
+  .title-meta {
+    margin-top: 4px;
+    font-size: 12px;
+  }
+  /* The synopsis spans the full sheet width under the poster row. */
+  .title-copy {
+    display: contents;
+  }
+  .title-head,
+  .title-meta,
+  .season-pick {
+    grid-column: 2;
+  }
+  .title-head {
+    padding-right: 28px;
+  }
+  .title-description,
+  .synopsis-toggle {
+    grid-column: 1 / -1;
+  }
+  .title-description {
+    margin-top: 14px;
+  }
+  .title-description.is-clamped {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  .synopsis-toggle {
+    justify-self: start;
+    margin-top: 4px;
+  }
+  .detail-poster {
+    grid-row: 1 / span 3;
+  }
+  .detail-poster .poster-art {
+    inset: 8px 8px auto;
+    font-size: 11px;
+  }
+  .release-channels {
+    margin-top: 24px;
+  }
+  .channel-row {
+    gap: 10px;
+  }
+  .bell-toggle {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    margin-right: -4px;
+  }
+  .reminder-checks {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog[open],
+  .detail-more[open] > .more-panel {
+    animation: none;
+  }
+  .bell-toggle,
+  .detail-more > summary {
+    transition: none;
+  }
+  .bell-toggle:active:not(:disabled) {
+    transform: none;
+  }
+}

@@ -12,3 +12,8 @@ export function due(e:Release,kind:string,now:Date,zone:string,hour:number) {
  const localHour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',hourCycle:'h23'}).format(now));
  return dayInZone(now,zone)===target && localHour>=hour;
 }
+// Errors carrying an HTTP status. Anything else reaching the API boundary is treated
+// as an internal/database failure and answered with a generic 503.
+export class HttpError extends Error { status:number; constructor(message:string, status:number) { super(message); this.status=status; } }
+export class ValidationError extends HttpError { constructor(message:string) { super(message,400); } }
+export class UpstreamError extends HttpError { constructor(message:string) { super(message,502); } }

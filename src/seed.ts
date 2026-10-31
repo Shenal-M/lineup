@@ -1,7 +1,10 @@
-export async function seed(store: any) {
-  if (store.initializeSeed) return store.initializeSeed(seed);
+import type { Store } from "./postgres-store.ts";
+// Cold start: a plain unlocked existence check (one round trip); the lock and
+// transaction are only taken when sample data actually has to be written.
+export async function seed(store: Pick<Store, "get" | "seedOnce">) {
   if (await store.get("settings", "user")) return;
 
+  const seededTitles: any[] = [];
   const titles = [
     [
       "dog-stars",
@@ -112,7 +115,7 @@ export async function seed(store: any) {
     bg,
     art,
   ] of titles)
-    await store.put("titles", {
+    seededTitles.push({
       id,
       name,
       mediaType,
@@ -125,6 +128,7 @@ export async function seed(store: any) {
       art,
       demo: true,
     });
+  const releases: any[] = [];
   const events = [
     ["dog-stars", "theatrical", null, "2026-11-06", "day"],
     ["odyssey", "streaming", "Prime Video", "2026-11-12", "day"],
@@ -140,7 +144,7 @@ export async function seed(store: any) {
     i,
     [titleId, medium, service, date, precision],
   ] of events.entries())
-    await store.upsert({
+    releases.push({
       id: `demo-${i}`,
       titleId,
       market: "US",
@@ -154,10 +158,9 @@ export async function seed(store: any) {
       sourceUrl: "",
       revision: 1,
     });
-  await store.put("settings", {
-    id: "user",
-    market: "US",
-    timezone: "Asia/Colombo",
-    hour: 9,
+  await store.seedOnce({
+    titles: seededTitles,
+    releases,
+    settings: { id: "user", market: "US", timezone: "Asia/Colombo", hour: 9 },
   });
 }

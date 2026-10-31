@@ -1,0 +1,273 @@
+/* Settings and sign-in screens. */
+
+/* ---------- Settings ---------- */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  max-width: 720px;
+  min-width: 0;
+}
+.settings-section {
+  min-width: 0;
+}
+.settings-section h2 {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text);
+}
+.settings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 260px);
+  align-items: center;
+  gap: 8px 24px;
+  min-height: 60px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-label {
+  min-width: 0;
+}
+.settings-label label,
+.settings-name {
+  display: block;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.settings-label small {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.settings-control {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.settings-email {
+  justify-self: end;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.settings-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.settings-time {
+  font: 12px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+}
+.settings .fineprint {
+  margin-top: 12px;
+}
+.settings-health + .fineprint {
+  margin-top: 4px;
+}
+
+.status {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.status-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.status.on {
+  color: var(--text-2);
+}
+.status.on .status-dot {
+  background: var(--success);
+}
+.status.error {
+  color: var(--text-2);
+}
+.status.error .status-dot {
+  background: var(--danger);
+}
+
+/* Change password: collapsed until requested. */
+.password-panel {
+  grid-column: 1 / -1;
+  max-width: 360px;
+  padding: 4px 0 8px;
+  animation: settings-reveal 180ms var(--ease-out);
+}
+.password-panel > label:first-child {
+  margin-top: 4px;
+}
+.password-panel > button {
+  margin-top: 16px;
+}
+
+/* Background job health: a quiet line when fine, a full row on error. */
+.settings-health {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.settings-row.is-error .status {
+  color: var(--danger);
+}
+
+/* ---------- Auth ---------- */
+.auth-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 24px 16px;
+}
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-modal);
+  background: var(--surface-1);
+}
+.auth-card .brand {
+  margin-bottom: 32px;
+}
+.auth-card h1 {
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+.auth-heading p,
+.auth-card > p {
+  margin-top: 8px;
+}
+.auth-card > button {
+  margin-top: 20px;
+}
+.auth-card form {
+  margin-top: 24px;
+}
+.auth-card form > label:first-child {
+  margin-top: 0;
+}
+.password-field {
+  position: relative;
+}
+.password-field input {
+  padding-right: 44px;
+}
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  translate: 0 -50%;
+  color: var(--text-3);
+}
+.password-toggle[aria-pressed="true"] {
+  color: var(--text);
+}
+.auth-error p {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--danger);
+  animation: settings-error-in 160ms var(--ease-out);
+}
+.auth-card button[type="submit"] {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 20px;
+}
+.auth-note {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* ---------- Motion ---------- */
+@keyframes settings-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes settings-error-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 760px) {
+  .settings {
+    gap: 32px;
+  }
+  .settings-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 16px;
+    min-height: 0;
+  }
+  .settings-row:has(> .settings-control),
+  .settings-row:has(> .settings-email) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-control {
+    justify-content: stretch;
+  }
+  .settings-control > button,
+  .settings-actions > button,
+  .password-panel > button {
+    width: 100%;
+  }
+  .settings-email {
+    justify-self: start;
+    text-align: left;
+  }
+  .password-panel {
+    max-width: none;
+  }
+
+  .auth-screen {
+    place-items: start stretch;
+    padding: 56px 16px 24px;
+  }
+  .auth-card {
+    max-width: none;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .password-panel,
+  .auth-error p {
+    animation: none;
+  }
+}

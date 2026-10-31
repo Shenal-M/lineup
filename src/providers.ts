@@ -1,18 +1,48 @@
+import { HttpError, UpstreamError } from "./model.ts";
+import type { Store } from "./postgres-store.ts";
 // Provider credentials stay server-side. Generic digital dates never become subscription premieres.
+// Upstream failures surface as UpstreamError (HTTP 502) with a non-sensitive message.
 async function json(url: string, headers: any = {}) {
-  const r = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
-  if (!r.ok) throw new Error(`Source returned HTTP ${r.status}`);
-  return r.json();
+  let r: Response;
+  try {
+    r = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+  } catch (e) {
+    throw new UpstreamError(
+      e instanceof Error && e.name === "TimeoutError"
+        ? "TMDB did not respond in time"
+        : "Could not reach TMDB",
+    );
+  }
+  if (!r.ok) throw new UpstreamError(`TMDB returned HTTP ${r.status}`);
+  try {
+    return await r.json();
+  } catch {
+    throw new UpstreamError("TMDB returned an invalid response");
+  }
 }
 async function tmdb(path: string) {
-  if (!process.env.TMDB_TOKEN) throw new Error("TMDB_TOKEN is not configured");
+  if (!process.env.TMDB_TOKEN)
+    throw new HttpError("TMDB_TOKEN is not configured", 503);
   return json("https://api.themoviedb.org/3" + path, {
     Authorization: `Bearer ${process.env.TMDB_TOKEN}`,
   });
 }
+// Runs fn over items with at most `limit` in flight; rejects on the first failure.
+async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>) {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
 export async function searchTMDB(q: string) {
   const d: any = await tmdb("/search/multi?query=" + encodeURIComponent(q));
-  return d.results
+  return (d.results || [])
     .filter((x: any) => ["movie", "tv"].includes(x.media_type))
     .map((x: any) => ({
       id: `tmdb-${x.media_type}-${x.id}`,
@@ -31,7 +61,7 @@ export async function searchTMDB(q: string) {
     }));
 }
 export async function importTheatrical(
-  store: any,
+  store: Pick<Store, "importReleases">,
   market: string,
   from: string,
   to: string,
@@ -39,15 +69,22 @@ export async function importTheatrical(
   const data: any = await tmdb(
     `/discover/movie?region=${market}&with_release_type=2%7C3&release_date.gte=${from}&release_date.lte=${to}`,
   );
-  let count = 0;
-  for (const movie of data.results) {
+  const movies: any[] = data.results || [];
+  // Release dates are fetched with limited concurrency; all writes then happen in one
+  // locked transaction.
+  const dates = await mapLimit(movies, 5, (movie) =>
+    tmdb(`/movie/${movie.id}/release_dates`),
+  );
+  const titles: any[] = [];
+  const releases: any[] = [];
+  movies.forEach((movie, index) => {
     const id = `tmdb-movie-${movie.id}`;
-    await store.put("titles", {
+    titles.push({
       id,
       tmdbId: movie.id,
       name: movie.title,
       mediaType: "movie",
-      year: Number(movie.release_date?.slice(0, 4)),
+      year: Number(movie.release_date?.slice(0, 4)) || null,
       synopsis: movie.overview,
       poster: movie.poster_path
         ? "https://image.tmdb.org/t/p/w500" + movie.poster_path
@@ -56,15 +93,16 @@ export async function importTheatrical(
       genre: "Movie",
       credit: "TMDB catalogue",
     });
-    const dates: any = await tmdb(`/movie/${movie.id}/release_dates`);
-    const regional = dates.results.find((r: any) => r.iso_3166_1 === market);
+    const regional = (dates[index]?.results || []).find(
+      (r: any) => r.iso_3166_1 === market,
+    );
     for (const type of [2, 3]) {
       const records = (regional?.release_dates || [])
-        .filter((r: any) => r.type === type)
+        .filter((r: any) => r.type === type && typeof r.release_date === "string")
         .sort((a: any, b: any) => a.release_date.localeCompare(b.release_date));
       const r = records[0];
       if (!r) continue;
-      await store.upsert({
+      releases.push({
         id: `tmdb-${movie.id}-${market}-${type}`,
         titleId: id,
         market,
@@ -78,57 +116,15 @@ export async function importTheatrical(
         sourceUrl: `https://www.themoviedb.org/movie/${movie.id}/releases`,
         revision: 1,
       });
-      count++;
     }
-  }
-  await store.put("health", {
+  });
+  await store.importReleases(titles, releases, {
     id: "tmdb",
     state: "ok",
     updatedAt: new Date().toISOString(),
-    note: `Imported ${count} regional events (first discovery page).`,
+    note: `Imported ${releases.length} regional events (first discovery page).`,
   });
-  return count;
-}
-export async function importTVmaze(store: any, date: string) {
-  const rows: any = await json(
-    `https://api.tvmaze.com/schedule/web?date=${date}`,
-  );
-  let count = 0;
-  for (const ep of rows) {
-    const show = ep._embedded?.show;
-    if (!show) continue;
-    // Global web schedules cannot establish country-specific streaming premieres.
-    const country = show.webChannel?.country?.code;
-    if (!country || ep.number !== 1) continue;
-    const id = `tvmaze-${show.id}`;
-    await store.put("titles", {
-      id,
-      name: show.name,
-      mediaType: "tv",
-      year: Number((show.premiered || "").slice(0, 4)),
-      synopsis: (show.summary || "").replace(/<[^>]*>/g, ""),
-      poster: show.image?.medium,
-      genre: (show.genres || []).join(" · "),
-      credit: `Season ${ep.season}`,
-      demo: false,
-    });
-    // Store the schedule as an observation until its market and subscription offer are verified.
-    await store.put("observations", {
-      id: `tvmaze-${ep.id}`,
-      titleId: id,
-      season: ep.season,
-      episode: ep.number,
-      market: country,
-      service: show.webChannel.name,
-      date: ep.airdate || null,
-      source: "TVmaze web schedule",
-      sourceUrl: ep.url,
-      observedAt: new Date().toISOString(),
-      note: "Schedule observation only; subscription availability unverified.",
-    });
-    count++;
-  }
-  return count;
+  return releases.length;
 }
 export async function hydrateTitle(title: any) {
   if (!title.tmdbId) return title;

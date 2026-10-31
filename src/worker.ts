@@ -1,13 +1,13 @@
 import { getRuntime } from "./lib/runtime.ts";
-import { deliverEmails } from "./email.ts";
+import { deliverEmails, emailConfigured } from "./email.ts";
 const { store } = await getRuntime();
 try {
   await store.tick();
-  if ("sql" in store) console.log(await deliverEmails(store));
-  else
-    console.log(
-      "Reminder inbox checked. Scheduled email requires DATABASE_URL.",
-    );
+  console.log(
+    emailConfigured()
+      ? await deliverEmails(store)
+      : "Reminder inbox checked. Set RESEND_API_KEY and EMAIL_FROM to send email.",
+  );
 } finally {
   await store.db.close();
 }

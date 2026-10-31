@@ -12,6 +12,48 @@ type Props = {
   notify: (s: string) => void;
   onError: (e: unknown) => void;
 };
+type Tone = "on" | "off" | "error";
+const healthNames: Record<string, string> = {
+  tmdb: "TMDB import",
+  scheduler: "Reminder scheduler",
+};
+// Quiet one-liners for healthy background jobs.
+const healthDone: Record<string, string> = {
+  tmdb: "Last TMDB import",
+  scheduler: "Reminders checked",
+};
+const hours = Array.from({ length: 24 }, (_, h) => [
+  h,
+  `${h % 12 || 12}:00 ${h < 12 ? "AM" : "PM"}`,
+]) as [number, string][];
+function ago(iso: string) {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return iso;
+  const min = Math.round((Date.now() - t) / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  if (min < 24 * 60) return `${Math.round(min / 60)} h ago`;
+  return `on ${when(iso)}`;
+}
+function Status({ tone, children }: { tone: Tone; children: string }) {
+  return (
+    <span className={`status ${tone}`}>
+      <span className="status-dot" aria-hidden="true" />
+      {children}
+    </span>
+  );
+}
+function when(iso: string) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
 export function SettingsPage({
   state,
   user,
@@ -23,6 +65,7 @@ export function SettingsPage({
   onError,
 }: Props) {
   const [busy, setBusy] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
@@ -49,6 +92,7 @@ export function SettingsPage({
     try {
       await api("auth/password", "POST", Object.fromEntries(data));
       form.reset();
+      setChangingPassword(false);
       notify("Password updated. Other devices have been signed out.");
     } catch (error) {
       onError(error);
@@ -82,181 +126,256 @@ export function SettingsPage({
       state.settings.timezone,
     ]),
   ];
+  // Failures get a full row; healthy jobs collapse into one quiet line.
+  const failing = state.health.filter((h) => h.state === "error"),
+    quiet = state.health.filter((h) => h.state !== "error");
+  const monthLabel = month.toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+  });
   return (
     <>
-      <Heading
-        title="Settings."
-        subtitle="Choose your release market and reminder preferences."
-      />
-      <div className="settings-grid">
-        <div>
-          <fieldset className="account-settings">
-            <legend>Your account</legend>
-            <div className="account-summary">
-              <div>
-                <strong>{user.email}</strong>
+      <Heading title="Settings" />
+      <div className="settings">
+        <section className="settings-section" aria-labelledby="settings-prefs">
+          <h2 id="settings-prefs">Preferences</h2>
+          <form
+            key={JSON.stringify(state.settings)}
+            onSubmit={save}
+            className="settings-list"
+          >
+            <div className="settings-row">
+              <div className="settings-label">
+                <label htmlFor="pref-market">Release market</label>
+                <small>Dates never fall back to another country.</small>
+              </div>
+              <div className="settings-control">
+                <select
+                  id="pref-market"
+                  name="market"
+                  defaultValue={state.settings.market}
+                >
+                  {Object.entries(countries).map(([v, label]) => (
+                    <option key={v} value={v}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="settings-row">
+              <div className="settings-label">
+                <label htmlFor="timezone">Reminder timezone</label>
+              </div>
+              <div className="settings-control">
+                <select
+                  id="timezone"
+                  name="timezone"
+                  defaultValue={state.settings.timezone}
+                >
+                  {timezones.map((t) => (
+                    <option key={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="settings-row">
+              <div className="settings-label">
+                <label htmlFor="hour">Reminder time</label>
+                <small>In your reminder timezone.</small>
+              </div>
+              <div className="settings-control">
+                <select
+                  id="hour"
+                  name="hour"
+                  defaultValue={String(state.settings.hour)}
+                >
+                  {hours.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="settings-actions">
+              <button className="primary" disabled={busy === "settings"}>
+                {busy === "settings" ? "Saving…" : "Save preferences"}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="settings-section" aria-labelledby="settings-sources">
+          <h2 id="settings-sources">Data sources</h2>
+          <ul className="settings-list">
+            <li className="settings-row">
+              <div className="settings-label">
+                <span className="settings-name">TMDB</span>
                 <small>
-                  Follows, settings, and dates saved on this server.
+                  {state.sources.tmdb
+                    ? "Catalogue and theatrical dates."
+                    : "Set TMDB_TOKEN on the server to enable."}
                 </small>
               </div>
-              <button onClick={() => onSignOut().catch(onError)}>
-                Sign out
-              </button>
-            </div>
-            <details>
-              <summary>Change password</summary>
-              <form onSubmit={password}>
-                <label htmlFor="current-password">Current password</label>
-                <input
-                  id="current-password"
-                  name="currentPassword"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  maxLength={256}
-                />
-                <label htmlFor="new-password">New password</label>
-                <input
-                  id="new-password"
-                  name="password"
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={12}
-                  maxLength={256}
-                  required
-                />
-                <p className="fineprint">
-                  Changing your password signs out your other devices.
-                </p>
-                <button className="primary" disabled={busy === "password"}>
-                  Update password
-                </button>
-              </form>
-            </details>
-          </fieldset>
-          <form key={JSON.stringify(state.settings)} onSubmit={save}>
-            <fieldset>
-              <legend>Release preferences</legend>
-              <label htmlFor="pref-market">Release market</label>
-              <select
-                id="pref-market"
-                name="market"
-                defaultValue={state.settings.market}
-              >
-                {Object.entries(countries).map(([v, label]) => (
-                  <option key={v} value={v}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <p>
-                Market selection never falls back to another country. Sri Lankan
-                release coverage requires your own local sources.
-              </p>
-              <label htmlFor="timezone">Reminder timezone</label>
-              <select
-                id="timezone"
-                name="timezone"
-                defaultValue={state.settings.timezone}
-              >
-                {timezones.map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-              <label htmlFor="hour">Reminder hour (24-hour)</label>
-              <input
-                id="hour"
-                name="hour"
-                type="number"
-                min={0}
-                max={23}
-                defaultValue={state.settings.hour}
-                required
-              />
-              <p>
-                Date-only releases stay on the market calendar day. Reminder
-                checks use this timezone.
-              </p>
-              <button className="primary" disabled={busy === "settings"}>
-                Save preferences
-              </button>
-            </fieldset>
-          </form>
-          <fieldset>
-            <legend>Notifications</legend>
-            <p>
-              In-app reminders follow your selected channels and reminder rules.
-              Scheduled email checks use your reminder timezone.
-            </p>
-            <p>
-              {state.sources.email
-                ? `Email delivery is configured for ${user.email}. Scheduled checks must be enabled to send reminders while the app is closed.`
-                : "Email delivery is not configured yet."}
-            </p>
-            <p>Phone push and weekly digests are not connected.</p>
-            <button onClick={() => openInbox().catch(onError)}>
-              Open notification inbox →
-            </button>
-          </fieldset>
-        </div>
-        <div>
-          <fieldset>
-            <legend>Data connections</legend>
-            <div className="source-row">
-              <span>TMDB · catalogue & theatrical dates</span>
-              <span className={`badge ${state.sources.tmdb ? "" : "off"}`}>
-                {state.sources.tmdb ? "Configured" : "Not connected"}
-              </span>
-            </div>
-            <div className="source-row">
-              <span>Streaming premiere feed</span>
-              <span className="badge off">Not connected</span>
-            </div>
-            <div className="source-row">
-              <span>Manual announcements</span>
-              <span className="badge">Ready</span>
-            </div>
-            <p>
-              Set TMDB_TOKEN on the server and restart to enable live search and
-              theatrical imports. Credentials never go in the browser.
-            </p>
-            <p>
-              Streaming dates can be added in a title’s details, with a source.
-              Provider-feed integration remains to be built.
-            </p>
-            <button
-              disabled={!state.sources.tmdb || busy === "import"}
-              onClick={() => void importDates()}
-            >
-              {busy === "import"
-                ? "Importing regional dates…"
-                : `Import theatrical dates · ${month.toLocaleDateString("en-US", { month: "short", year: "numeric" })}`}
-            </button>
-            {state.health.map((h) => (
-              <p key={h.id}>
-                {h.id} · {h.state} · {h.note}
-                <small>{h.updatedAt}</small>
-              </p>
+              <Status tone={state.sources.tmdb ? "on" : "off"}>
+                {state.sources.tmdb ? "Connected" : "Not connected"}
+              </Status>
+            </li>
+            <li className="settings-row">
+              <div className="settings-label">
+                <span className="settings-name">Streaming feed</span>
+                <small>Add streaming dates manually in a title’s details.</small>
+              </div>
+              <Status tone={state.sources.streaming ? "on" : "off"}>
+                {state.sources.streaming ? "Connected" : "Not connected"}
+              </Status>
+            </li>
+            <li className="settings-row">
+              <div className="settings-label">
+                <span className="settings-name">Email reminders</span>
+                <small>
+                  {state.sources.email
+                    ? `Sent to ${user.email}.`
+                    : "Not configured on the server."}
+                </small>
+              </div>
+              <Status tone={state.sources.email ? "on" : "off"}>
+                {state.sources.email ? "Connected" : "Not connected"}
+              </Status>
+            </li>
+            {failing.map((h) => (
+              <li className="settings-row is-error" key={h.id}>
+                <div className="settings-label">
+                  <span className="settings-name">
+                    {healthNames[h.id] ?? h.id}
+                  </span>
+                  <small>{h.note || "The last run failed."}</small>
+                </div>
+                <div className="settings-value">
+                  <Status tone="error">Error</Status>
+                  <time className="settings-time" dateTime={h.updatedAt}>
+                    {when(h.updatedAt)}
+                  </time>
+                </div>
+              </li>
             ))}
-            <p className="fineprint">
-              Live catalogue metadata and images: TMDB. This product uses the
-              TMDB API but is not endorsed or certified by TMDB. Official logo
-              attribution must be added before public launch.
+            <li className="settings-row">
+              <div className="settings-label">
+                <span className="settings-name">Theatrical dates</span>
+                <small>Import regional cinema releases for this month.</small>
+              </div>
+              <div className="settings-control">
+                <button
+                  disabled={!state.sources.tmdb || busy === "import"}
+                  onClick={() => void importDates()}
+                >
+                  {busy === "import" ? "Importing…" : `Import ${monthLabel}`}
+                </button>
+              </div>
+            </li>
+          </ul>
+          {quiet.length > 0 && (
+            <p className="settings-health">
+              {quiet.map((h, i) => (
+                <span key={h.id} title={h.note || undefined}>
+                  {i > 0 && " · "}
+                  {h.state === "ok"
+                    ? `${healthDone[h.id] ?? healthNames[h.id] ?? h.id} `
+                    : `${healthNames[h.id] ?? h.id}: ${h.state}, `}
+                  <time dateTime={h.updatedAt} suppressHydrationWarning>
+                    {ago(h.updatedAt)}
+                  </time>
+                </span>
+              ))}
             </p>
-          </fieldset>
-          <fieldset>
-            <legend>About this build</legend>
-            <p>
-              Lineup is a personal release tracker built with Next.js and React.
-              Sample titles, dates, and service associations are labelled and
-              are not verified.
-            </p>
-            <p>
-              Follows, settings, release history, and notifications live in a
-              server database. Keep database backups.
-            </p>
-          </fieldset>
-        </div>
+          )}
+          <p className="fineprint">
+            Uses the TMDB API but is not endorsed or certified by TMDB.
+          </p>
+        </section>
+
+        <section className="settings-section" aria-labelledby="settings-account">
+          <h2 id="settings-account">Account</h2>
+          <div className="settings-list">
+            <div className="settings-row">
+              <div className="settings-label">
+                <span className="settings-name">Email</span>
+              </div>
+              <span className="settings-email">{user.email}</span>
+            </div>
+            <div className="settings-row">
+              <div className="settings-label">
+                <span className="settings-name">Notifications</span>
+              </div>
+              <div className="settings-control">
+                <button onClick={() => openInbox().catch(onError)}>
+                  Open inbox
+                </button>
+              </div>
+            </div>
+            <div className="settings-row settings-row-wrap">
+              <div className="settings-label">
+                <span className="settings-name">Password</span>
+                <small>Changing it signs out your other devices.</small>
+              </div>
+              <div className="settings-control">
+                <button
+                  aria-expanded={changingPassword}
+                  aria-controls={
+                    changingPassword ? "password-panel" : undefined
+                  }
+                  onClick={() => setChangingPassword((v) => !v)}
+                >
+                  {changingPassword ? "Cancel" : "Change password"}
+                </button>
+              </div>
+              {changingPassword && (
+                <form
+                  id="password-panel"
+                  className="password-panel"
+                  onSubmit={password}
+                >
+                  <label htmlFor="current-password">Current password</label>
+                  <input
+                    id="current-password"
+                    name="currentPassword"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    maxLength={256}
+                    autoFocus
+                  />
+                  <label htmlFor="new-password">New password</label>
+                  <input
+                    id="new-password"
+                    name="password"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={12}
+                    maxLength={256}
+                    required
+                    placeholder="At least 12 characters"
+                  />
+                  <button className="primary" disabled={busy === "password"}>
+                    {busy === "password" ? "Updating…" : "Update password"}
+                  </button>
+                </form>
+              )}
+            </div>
+            <div className="settings-row">
+              <div className="settings-label">
+                <span className="settings-name">Sign out</span>
+                <small>Sign out on this device.</small>
+              </div>
+              <div className="settings-control">
+                <button onClick={() => onSignOut().catch(onError)}>
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </>
   );

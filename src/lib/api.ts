@@ -1,6 +1,8 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { emailConfigured } from "../email";
 import { getRuntime } from "./runtime";
+import { clientAddress } from "../auth";
+import { HttpError, ValidationError } from "../model";
 import {
   searchTMDB,
   importTheatrical,
@@ -8,13 +10,117 @@ import {
   hydrateSeason,
 } from "../providers";
 
+const MARKETS = ["US", "GB", "LK"];
+const MEDIA = ["theatrical", "streaming"];
+const RULES = ["announced", "changed", "week", "day", "release"];
+const PRECISIONS = ["day", "month", "quarter", "year", "unknown"];
+const STATUSES = ["announced", "estimated", "postponed", "cancelled", "first_observed"];
+
+const isDate = (d: unknown): d is string =>
+  typeof d === "string" &&
+  /^\d{4}-\d{2}-\d{2}$/.test(d) &&
+  new Date(d + "T12:00Z").toISOString().slice(0, 10) === d;
+const decode = (segment: string) => {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    throw new ValidationError("Invalid path");
+  }
+};
+const text = (v: unknown, max: number) =>
+  typeof v === "string" ? v.trim().slice(0, max) : "";
+// Error details stay in server logs; responses carry generic messages.
+const describe = (e: unknown) =>
+  e instanceof Error
+    ? `${e.name}${(e as any).code ? ` [${(e as any).code}]` : ""}: ${e.message}`
+    : String(e);
+
+// Builds the stored release from an explicit field allowlist.
+function releaseFrom(
+  input: any,
+  fixed: { id: string; titleId: string; revision: number },
+) {
+  const { market, medium, precision, status } = input;
+  if (
+    !MARKETS.includes(market) ||
+    !MEDIA.includes(medium) ||
+    !PRECISIONS.includes(precision) ||
+    !STATUSES.includes(status)
+  )
+    throw new ValidationError("Invalid release fields");
+  let date: string | null = null,
+    endDate: string | null = null;
+  if (precision !== "unknown") {
+    if (!isDate(input.date)) throw new ValidationError("Enter a valid date");
+    date = input.date;
+    if (input.endDate != null && input.endDate !== "") {
+      if (!isDate(input.endDate)) throw new ValidationError("Enter a valid end date");
+      if (input.endDate < input.date) throw new ValidationError("End date must not be before the date");
+      endDate = input.endDate;
+    }
+  }
+  const source = text(input.source, 300);
+  if (!source) throw new ValidationError("A source note is required");
+  const sourceUrl = text(input.sourceUrl, 2000);
+  if (sourceUrl && !/^https?:\/\//i.test(sourceUrl))
+    throw new ValidationError("Source must be an HTTP URL");
+  if (medium === "streaming" && input.offer !== "subscription")
+    throw new ValidationError("Only subscription premieres are supported");
+  const service = medium === "streaming" ? text(input.service, 60) || null : null;
+  return {
+    id: fixed.id,
+    titleId: fixed.titleId,
+    market,
+    medium,
+    service,
+    offer: medium === "streaming" ? "subscription" : "ticket",
+    date,
+    ...(endDate ? { endDate } : {}),
+    precision,
+    status,
+    source,
+    sourceUrl,
+    revision: fixed.revision,
+    manual: true,
+  };
+}
+
+// Validated follow preferences from an explicit field allowlist.
+function followFrom(body: any) {
+  const invalid = new ValidationError("Invalid follow preferences");
+  if (
+    typeof body.titleId !== "string" ||
+    !body.titleId ||
+    body.titleId.length > 200 ||
+    !MARKETS.includes(body.market) ||
+    !MEDIA.includes(body.medium) ||
+    !Array.isArray(body.services) ||
+    body.services.length > 10 ||
+    !Array.isArray(body.rules) ||
+    body.rules.length > 10
+  )
+    throw invalid;
+  const services = body.services.map((s: unknown) =>
+    typeof s === "string" ? s.trim() : "",
+  );
+  if (services.some((s: string) => !s || s.length > 60)) throw invalid;
+  if (body.rules.some((r: unknown) => !RULES.includes(r as string))) throw invalid;
+  return {
+    titleId: body.titleId as string,
+    market: body.market as string,
+    medium: body.medium as string,
+    services: [...new Set<string>(services)],
+    rules: RULES.filter((r) => body.rules.includes(r)),
+    channel: body.scope === "channel",
+  };
+}
+
 export async function handleApi(request: Request) {
   let initialized = false;
   const responseHeaders = new Headers({ "Cache-Control": "no-store" });
   const req = {
     method: request.method,
     headers: Object.fromEntries(request.headers.entries()),
-    socket: { remoteAddress: "personal-owner" },
   };
   const res = {
     setHeader: (key: string, value: string) => responseHeaders.set(key, value),
@@ -22,35 +128,6 @@ export async function handleApi(request: Request) {
   const send = (status: number, data: unknown) =>
     Response.json(data, { status, headers: responseHeaders });
   const u = new URL(request.url);
-  async function validateRelease(e: any) {
-    const { store } = await getRuntime();
-    if (
-      !(await store.get("titles", e.titleId)) ||
-      !["US", "GB", "LK"].includes(e.market) ||
-      !["theatrical", "streaming"].includes(e.medium) ||
-      !["day", "month", "quarter", "year", "unknown"].includes(e.precision) ||
-      ![
-        "announced",
-        "estimated",
-        "postponed",
-        "cancelled",
-        "first_observed",
-      ].includes(e.status)
-    )
-      throw Error("Invalid release fields");
-    if (e.precision === "unknown") e.date = null;
-    else if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(e.date) ||
-      new Date(e.date + "T12:00Z").toISOString().slice(0, 10) !== e.date
-    )
-      throw Error("Enter a valid date");
-    if (!e.source?.trim()) throw Error("A source note is required");
-    if (e.sourceUrl && !/^https?:\/\//.test(e.sourceUrl))
-      throw Error("Source must be an HTTP URL");
-    if (e.medium === "streaming" && e.offer !== "subscription")
-      throw Error("Only subscription premieres are supported");
-    return e;
-  }
   try {
     const { store, auth } = await getRuntime();
     initialized = true;
@@ -68,17 +145,27 @@ export async function handleApi(request: Request) {
       const raw = await request.text();
       if (Buffer.byteLength(raw) > 65536)
         return send(413, { error: "Request too large" });
-      body = JSON.parse(raw || "{}");
+      try {
+        body = JSON.parse(raw || "{}");
+      } catch {
+        throw new ValidationError("Invalid JSON body");
+      }
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        throw new ValidationError("Invalid request body");
     }
-    const signedIn = await auth.authenticated(req);
-    if (u.pathname === "/api/auth/status" && req.method === "GET")
+    if (u.pathname === "/api/auth/status" && req.method === "GET") {
+      const [signedIn, owner] = await Promise.all([
+        auth.authenticated(req),
+        auth.user(),
+      ]);
       return send(200, {
-        setupRequired: !(await auth.user()),
+        setupRequired: !owner,
         setupKeyRequired: !!process.env.SETUP_KEY,
         authenticated: signedIn,
-        user: signedIn ? await auth.user() : null,
+        user: signedIn ? owner : null,
       });
-    const address = req.socket.remoteAddress || "local";
+    }
+    const address = clientAddress(req.headers);
     if (u.pathname === "/api/auth/setup" && req.method === "POST") {
       if (
         (process.env.COOKIE_SECURE === "true" || process.env.VERCEL) &&
@@ -118,6 +205,7 @@ export async function handleApi(request: Request) {
       await auth.logout(req, res);
       return send(200, { ok: true });
     }
+    const signedIn = await auth.authenticated(req);
     const bearer = req.headers.authorization || "";
     const expected = process.env.APP_TOKEN
       ? "Bearer " + process.env.APP_TOKEN
@@ -139,18 +227,20 @@ export async function handleApi(request: Request) {
       return send(200, { ok: true });
     }
     if (u.pathname === "/api/state" && req.method === "GET") {
-      await store.tick();
+      // Reminder checks are best effort here: the cron job is the source of truth.
+      try {
+        await store.tickIfStale();
+      } catch (e) {
+        console.error("Reminder check during state load failed:", describe(e));
+      }
+      const data = await store.stateData();
       return send(200, {
-        titles: await store.all("titles"),
-        releases: await store.all("releases"),
-        subscriptions: await store.all("subscriptions"),
-        settings: await store.get("settings", "user"),
-        notifications: await store.all("notifications"),
-        health: await store.all("health"),
+        ...data,
+        settings: data.settings.find((x) => x.id === "user") || null,
         sources: {
           tmdb: !!process.env.TMDB_TOKEN,
           streaming: false,
-          email: !!process.env.DATABASE_URL && emailConfigured(),
+          email: emailConfigured(),
         },
       });
     }
@@ -159,13 +249,14 @@ export async function handleApi(request: Request) {
       if (!q.trim()) return send(200, []);
       if (process.env.TMDB_TOKEN) {
         const rows = await searchTMDB(q);
-        for (const t of rows) await store.put("titles", t);
+        // One statement; richer stored titles (hydrated details) keep their fields.
+        await store.putMany("titles", rows, { merge: true });
         return send(200, rows);
       }
       return send(
         200,
         (await store.all("titles")).filter((t) =>
-          t.name.toLowerCase().includes(q.toLowerCase()),
+          String(t.name || "").toLowerCase().includes(q.toLowerCase()),
         ),
       );
     }
@@ -173,15 +264,12 @@ export async function handleApi(request: Request) {
       /^\/api\/titles\/([^/]+)(?:\/seasons\/(\d+))?$/,
     );
     if (titleRoute && req.method === "GET") {
-      const title = await store.get(
-        "titles",
-        decodeURIComponent(titleRoute[1]),
-      );
-      if (!title) return send(404, { error: "Title not found" });
-      if (!process.env.TMDB_TOKEN || !title.tmdbId) return send(200, title);
       const season = titleRoute[2] ? Number(titleRoute[2]) : null;
       if (season !== null && (season < 1 || season > 100))
-        throw Error("Invalid season");
+        throw new ValidationError("Invalid season");
+      const title = await store.get("titles", decode(titleRoute[1]));
+      if (!title) return send(404, { error: "Title not found" });
+      if (!process.env.TMDB_TOKEN || !title.tmdbId) return send(200, title);
       const hydrated =
         season !== null
           ? await hydrateSeason(title, season)
@@ -190,65 +278,59 @@ export async function handleApi(request: Request) {
       return send(200, hydrated);
     }
     if (u.pathname === "/api/subscriptions" && req.method === "POST") {
-      if (
-        !(await store.get("titles", body.titleId)) ||
-        !["US", "GB", "LK"].includes(body.market) ||
-        !["theatrical", "streaming"].includes(body.medium) ||
-        !Array.isArray(body.services) ||
-        body.services.some((s: any) => typeof s !== "string") ||
-        !Array.isArray(body.rules) ||
-        body.rules.some(
-          (r: any) =>
-            !["announced", "changed", "week", "day", "release"].includes(r),
-        )
-      )
-        return send(400, { error: "Invalid follow preferences" });
-      if (body.scope === "channel" && body.services.length > 1)
-        return send(400, {
-          error: "Choose one channel per notification toggle",
-        });
-      const base = `${body.titleId}:${body.market}:${body.medium}`;
-      const id =
-        body.scope === "channel"
-          ? `${base}:channel:${encodeURIComponent(body.services[0] || "any")}`
-          : body.id &&
-              (await store.get("subscriptions", body.id))?.titleId ===
-                body.titleId &&
-              (await store.get("subscriptions", body.id))?.market ===
-                body.market &&
-              (await store.get("subscriptions", body.id))?.medium ===
-                body.medium
-            ? body.id
-            : base;
-      await store.put("subscriptions", {
-        ...body,
+      const f = followFrom(body);
+      if (f.channel && f.services.length > 1)
+        throw new ValidationError("Choose one channel per notification toggle");
+      const base = `${f.titleId}:${f.market}:${f.medium}`;
+      const requested =
+        !f.channel && typeof body.id === "string" && body.id ? body.id : null;
+      const { title, sub } = await store.followContext(f.titleId, requested);
+      if (!title) throw new ValidationError("Invalid follow preferences");
+      const id = f.channel
+        ? `${base}:channel:${encodeURIComponent(f.services[0] || "any")}`
+        : sub &&
+            sub.titleId === f.titleId &&
+            sub.market === f.market &&
+            sub.medium === f.medium
+          ? (requested as string)
+          : base;
+      await store.follow({
         id,
-        createdAt:
-          (await store.get("subscriptions", id))?.createdAt ||
-          new Date().toISOString(),
+        titleId: f.titleId,
+        market: f.market,
+        medium: f.medium,
+        services: f.services,
+        rules: f.rules,
+        ...(f.channel ? { scope: "channel" } : {}),
+        // Kept from the stored subscription when it already exists (done in SQL).
+        createdAt: new Date().toISOString(),
       });
       return send(200, { id });
     }
-    if (
-      u.pathname.startsWith("/api/subscriptions/") &&
-      req.method === "DELETE"
-    ) {
-      await store.unfollow(decodeURIComponent(u.pathname.slice(19)));
+    const subscriptionRoute = u.pathname.match(/^\/api\/subscriptions\/([^/]+)$/);
+    if (subscriptionRoute && req.method === "DELETE") {
+      await store.unfollow(decode(subscriptionRoute[1]));
       return send(200, { ok: true });
     }
     if (u.pathname === "/api/settings" && req.method === "PATCH") {
+      if (
+        typeof body.timezone !== "string" ||
+        !body.timezone ||
+        body.timezone.length > 64
+      )
+        throw new ValidationError("Invalid timezone");
       try {
         new Intl.DateTimeFormat("en", { timeZone: body.timezone });
       } catch {
-        throw Error("Invalid timezone");
+        throw new ValidationError("Invalid timezone");
       }
       if (
-        !["US", "GB", "LK"].includes(body.market) ||
+        !MARKETS.includes(body.market) ||
         !Number.isInteger(body.hour) ||
         body.hour < 0 ||
         body.hour > 23
       )
-        throw Error("Invalid settings");
+        throw new ValidationError("Invalid settings");
       await store.put("settings", {
         id: "user",
         market: body.market,
@@ -258,31 +340,32 @@ export async function handleApi(request: Request) {
       return send(200, { ok: true });
     }
     if (u.pathname === "/api/releases" && req.method === "POST") {
-      const e = await validateRelease({
-        ...body,
+      if (typeof body.titleId !== "string" || !body.titleId)
+        throw new ValidationError("Invalid release fields");
+      const e = releaseFrom(body, {
         id: randomUUID(),
+        titleId: body.titleId,
         revision: 1,
-        manual: true,
       });
-      return send(200, await store.upsert(e));
+      if (!(await store.get("titles", e.titleId)))
+        throw new ValidationError("Invalid release fields");
+      return send(200, await store.upsert(e as any));
     }
-    if (u.pathname.startsWith("/api/releases/") && req.method === "PATCH") {
-      const id = u.pathname.split("/").pop()!;
+    const releaseRoute = u.pathname.match(/^\/api\/releases\/([^/]+)$/);
+    if (releaseRoute && req.method === "PATCH") {
+      const id = decode(releaseRoute[1]);
       const e = await store.get("releases", id);
       if (!e) return send(404, { error: "Release not found" });
-      return send(
-        200,
-        await store.upsert(
-          await validateRelease({ ...e, ...body, id, manual: true }),
-        ),
+      // The title a release belongs to cannot be changed.
+      const next = releaseFrom(
+        { ...e, ...body },
+        { id, titleId: e.titleId, revision: e.revision },
       );
+      return send(200, await store.upsert(next as any));
     }
     if (u.pathname === "/api/import" && req.method === "POST") {
-      if (
-        !["US", "GB", "LK"].includes(body.market) ||
-        !/^\d{4}-\d{2}-01$/.test(body.from)
-      )
-        throw Error("Invalid import range");
+      if (!MARKETS.includes(body.market) || !/^\d{4}-(0[1-9]|1[0-2])-01$/.test(body.from))
+        throw new ValidationError("Invalid import range");
       const d = new Date(body.from + "T12:00Z");
       d.setUTCMonth(d.getUTCMonth() + 1);
       d.setUTCDate(0);
@@ -295,29 +378,50 @@ export async function handleApi(request: Request) {
             d.toISOString().slice(0, 10),
           ),
         });
-      } catch (e: any) {
-        await store.put("health", {
-          id: "tmdb",
-          state: "error",
-          updatedAt: new Date().toISOString(),
-          note: e.message,
-        });
+      } catch (e: unknown) {
+        await store
+          .put("health", {
+            id: "tmdb",
+            state: "error",
+            updatedAt: new Date().toISOString(),
+            note: e instanceof HttpError ? e.message : "Import failed",
+          })
+          .catch((err) => console.error("Recording import health failed:", describe(err)));
         throw e;
       }
     }
     if (u.pathname === "/api/notifications/read" && req.method === "POST") {
-      for (const n of await store.all("notifications"))
-        await store.put("notifications", { ...n, read: true });
+      // { ids } marks only the notifications the client displayed; no ids marks all unread.
+      let ids: string[] | undefined;
+      if (body.ids !== undefined) {
+        if (
+          !Array.isArray(body.ids) ||
+          body.ids.length > 500 ||
+          body.ids.some((id: unknown) => typeof id !== "string" || !id || id.length > 500)
+        )
+          throw new ValidationError("Invalid notification ids");
+        ids = [...new Set<string>(body.ids)]; // [] marks nothing
+      }
+      await store.markNotificationsRead(ids);
       return send(200, { ok: true });
     }
     return send(404, { error: "Not found" });
   } catch (e: unknown) {
-    return send(initialized ? 400 : 503, {
-      error: !initialized
-        ? "Database unavailable. Check DATABASE_URL and apply the Supabase database migration."
-        : e instanceof Error
-          ? e.message
-          : "Request failed",
+    if (!initialized) {
+      console.error("Lineup runtime initialisation failed:", describe(e));
+      return send(503, {
+        error:
+          "Database unavailable. Check DATABASE_URL and apply the Supabase database migration.",
+      });
+    }
+    if (e instanceof HttpError) {
+      if (e.status >= 500)
+        console.error(`API ${req.method} ${u.pathname} upstream failure:`, describe(e));
+      return send(e.status, { error: e.message });
+    }
+    console.error(`API ${req.method} ${u.pathname} failed:`, describe(e));
+    return send(503, {
+      error: "Lineup is temporarily unavailable. Please try again shortly.",
     });
   }
 }

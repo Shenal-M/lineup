@@ -1,0 +1,447 @@
+/* App shell: sidebar/tab bar, header, brand, modal lists, toast. */
+/* ---------- Layout ---------- */
+.shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--sidebar) minmax(0, 1fr);
+  min-height: 100vh;
+}
+aside {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px 16px;
+  border-right: 1px solid var(--border);
+}
+/* 32px tall and centred in the header band, so the brand shares a centre
+   line with the header controls. */
+.brand-link {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  margin: calc((var(--header) - 32px) / 2) 0 36px;
+  padding: 0 8px;
+  border-radius: var(--r-control);
+}
+nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+nav a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  transition:
+    var(--t-hover),
+    transform 100ms var(--ease-out);
+}
+nav a .icon {
+  color: var(--text-3);
+  transition: color 120ms var(--ease-out);
+}
+nav a.active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+nav a.active .icon {
+  color: var(--text);
+}
+/* Amber indicator: always present, revealed on the active item. */
+nav a::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+  opacity: 0;
+  transform: scaleY(0.4);
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+nav a.active::before {
+  opacity: 1;
+  transform: none;
+}
+nav a:active {
+  transform: scale(0.98);
+}
+nav b {
+  margin-left: auto;
+  font: 500 12px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+/* The single Settings entry: pinned to the sidebar bottom on desktop, the
+   last tab on mobile. */
+.settings-link {
+  margin-top: auto;
+}
+.aside-bottom {
+  margin-top: 8px;
+}
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 10px 0;
+  border-top: 1px solid var(--border);
+}
+.profile > span:first-child {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  font-size: 11px;
+  font-weight: 600;
+}
+.profile-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: clip;
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: var(--header);
+  padding: 0 max(var(--pad), calc((100% - var(--content)) / 2));
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* Compact market control: a decorative code with the native select on top. */
+.market {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 26px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    no-repeat right 9px center;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: var(--t-hover);
+}
+.market .icon {
+  color: var(--text-3);
+}
+.market select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  font-size: 16px; /* no iOS focus zoom */
+  cursor: pointer;
+}
+.market:has(select:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.icon-button i {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+#content {
+  flex: 1;
+  width: calc(100% - 2 * var(--pad));
+  max-width: var(--content);
+  margin-inline: auto;
+  padding: 32px 0 64px;
+}
+@media (hover: hover) {
+  nav a:hover:not(.active) {
+    background: var(--surface-1);
+    color: var(--text);
+  }
+  .market:hover {
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+}
+
+/* ---------- Components ---------- */
+/* Brand */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 17px/1 var(--sans);
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+.brand-mark {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5px;
+  width: 15px;
+}
+.brand-mark i {
+  height: 3px;
+  border-radius: 1px;
+  background: var(--text);
+}
+.brand-mark i:nth-child(2) {
+  width: 70%;
+}
+.brand-mark i:nth-child(3) {
+  width: 42%;
+  background: var(--accent);
+}
+
+/* Lists inside dialogs (inbox, dates TBA) */
+.sheet-list {
+  margin: 8px -12px 0;
+  padding: 0;
+  list-style: none;
+}
+.sheet-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  font-weight: 400;
+  text-align: left;
+}
+button.sheet-item:active:not(:disabled) {
+  transform: none;
+  background: var(--surface-2);
+}
+.sheet-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.sheet-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.unread {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.sheet-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+@media (hover: hover) {
+  button.sheet-item:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+}
+
+/* Toast */
+/* Rendered as a manual popover (top layer): reset the UA popover box. */
+#toast {
+  position: fixed;
+  inset: auto auto 24px 50%;
+  z-index: 100;
+  width: max-content;
+  max-width: min(420px, calc(100% - 32px));
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  padding: 10px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+  font-size: 13px;
+  translate: -50% 0;
+}
+
+/* ---------- Mobile: top bar + bottom tab bar ---------- */
+@media (max-width: 760px) {
+  .shell {
+    display: block;
+  }
+  /* No transform/filter here: the fixed tab bar lives inside. */
+  aside {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    flex-direction: row;
+    align-items: center;
+    height: calc(var(--header) + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) var(--pad) 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .brand-link {
+    margin: 0 0 0 -8px;
+  }
+  .aside-bottom,
+  nav b {
+    display: none;
+  }
+  header {
+    position: fixed;
+    top: env(safe-area-inset-top);
+    right: var(--pad);
+    z-index: 16;
+    height: var(--header);
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .market {
+    height: 30px;
+    padding: 0 22px 0 9px;
+    background-position: right 7px center;
+  }
+  .market .icon {
+    display: none;
+  }
+  /* 40px hit area; the 30px chip keeps its look. */
+  .market select {
+    top: -5px;
+    height: calc(100% + 10px);
+  }
+  .header-actions .icon-button {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    margin-right: -10px;
+  }
+  .icon-button i {
+    top: 11px;
+    right: 12px;
+  }
+
+  /* Bottom tab bar */
+  nav {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 20;
+    flex-direction: row;
+    gap: 0;
+    padding: 0 max(8px, env(safe-area-inset-right))
+      env(safe-area-inset-bottom) max(8px, env(safe-area-inset-left));
+    border-top: 1px solid var(--border);
+    background: rgba(10, 10, 11, 0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .settings-link {
+    margin-top: 0;
+  }
+  nav a {
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    height: 56px;
+    padding: 0;
+    border-radius: 0;
+    color: var(--text-3);
+    font-size: 11px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  nav a .icon {
+    width: 20px;
+    height: 20px;
+  }
+  nav a.active {
+    background: transparent;
+    color: var(--text);
+  }
+  nav a::before {
+    inset: 0 auto auto 50%;
+    width: 16px;
+    height: 2px;
+    margin-left: -8px;
+    border-radius: 0 0 2px 2px;
+    transform: scaleX(0.4);
+  }
+  nav a:active {
+    transform: scale(0.96);
+  }
+  main {
+    padding-bottom: calc(57px + env(safe-area-inset-bottom));
+  }
+  #content {
+    padding: 20px 0 32px;
+  }
+  #toast {
+    bottom: calc(57px + 12px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  nav a,
+  nav a::before {
+    transition: none;
+  }
+  nav a:active {
+    transform: none;
+  }
+}

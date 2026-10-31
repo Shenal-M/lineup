@@ -1,7 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { getRuntime } from "../../../../src/lib/runtime";
-import { deliverEmails } from "../../../../src/email";
-export const runtime = "nodejs";
+import { deliverEmails, emailConfigured } from "../../../../src/email";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 export async function GET(request: Request) {
@@ -15,29 +14,29 @@ export async function GET(request: Request) {
     !timingSafeEqual(Buffer.from(expected), Buffer.from(received))
   )
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const headers = { "Cache-Control": "no-store" };
   try {
     const { store } = await getRuntime();
-    if (!("sql" in store))
-      return Response.json(
-        { error: "Scheduled email delivery requires DATABASE_URL." },
-        { status: 503 },
-      );
     await store.tick();
+    // Without email configuration the job still keeps the in-app inbox current.
+    if (!emailConfigured())
+      return Response.json({ tick: "ok", email: "not configured" }, { headers });
     const result = await deliverEmails(store);
-    return Response.json(result, {
-      status: result.failed ? 502 : 200,
-      headers: { "Cache-Control": "no-store" },
-    });
-  } catch {
+    return Response.json(
+      { tick: "ok", ...result },
+      { status: result.failed ? 502 : 200, headers },
+    );
+  } catch (e) {
     console.error(
-      "Scheduled reminder delivery failed; check database and email configuration.",
+      "Scheduled reminder job failed; check database migrations and email configuration:",
+      e instanceof Error ? `${e.name}: ${e.message}` : String(e),
     );
     return Response.json(
       {
         error:
           "Reminder job failed; check database migrations and email configuration.",
       },
-      { status: 503 },
+      { status: 503, headers },
     );
   }
 }

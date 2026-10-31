@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
 import { matches } from "./model.ts";
-import type { openPostgresStore } from "./postgres-store.ts";
-
-type Store = ReturnType<typeof openPostgresStore>;
+import { lit, type Store } from "./postgres-store.ts";
 export function emailConfigured() {
   return !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 }
@@ -22,30 +20,33 @@ export async function sendReminder(
     release: "Releasing today",
   };
   const subject = `${title?.demo ? "[Sample] " : ""}${labels[notification.kind] || "Release reminder"}: ${title?.name || "Your followed title"}`;
+  const payload = JSON.stringify({
+    from: process.env.EMAIL_FROM,
+    to: [recipient],
+    subject,
+    text: [
+      subject,
+      `${notification.service || notification.medium} · ${notification.date || "Date to be announced"}`,
+      title?.demo
+        ? "Illustrative sample data; this is not verified release information."
+        : "",
+      "Manage your follows and reminder rules in Lineup.",
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+  });
   const result = await fetcher("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      // Retries reuse the key; it covers the content too, because the provider rejects a
+      // reused key whose payload changed (e.g. the title was renamed between attempts).
       "Idempotency-Key": createHash("sha256")
-        .update("lineup:" + notification.id)
+        .update("lineup:" + notification.id + ":" + payload)
         .digest("hex"),
     },
-    body: JSON.stringify({
-      from: process.env.EMAIL_FROM,
-      to: [recipient],
-      subject,
-      text: [
-        subject,
-        `${notification.service || notification.medium} · ${notification.date || "Date to be announced"}`,
-        title?.demo
-          ? "Illustrative sample data; this is not verified release information."
-          : "",
-        "Manage your follows and reminder rules in Lineup.",
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-    }),
+    body: payload,
     signal: AbortSignal.timeout(8000),
   });
   if (!result.ok) throw Error(`Email provider returned HTTP ${result.status}`);
@@ -54,61 +55,94 @@ export async function sendReminder(
   return receipt.id as string;
 }
 
+// A claim older than this is considered abandoned (the send itself times out after 8s).
+const CLAIM_MS = 2 * 60 * 1000;
+// Resend idempotency lasts 24h. Stop automatic retries before that window expires.
+const REVIEW_MS = 23 * 3600000;
+
+// Delivery never holds the lock or a transaction across the HTTP call:
+// 1. one short locked transaction picks up to five unsent notifications, records their
+//    first attempt time (committed before any send, so a crash cannot reset the retry
+//    window), validates them and claims the deliverable ones;
+// 2. each claimed email is sent outside any transaction (same idempotency key on retry);
+// 3. the outcome is recorded with one statement per email.
 export async function deliverEmails(store: Store, fetcher = fetch) {
   if (!emailConfigured()) throw Error("Email delivery is not configured.");
-  const owner = await store.db
-    .prepare("select email from account where id='owner'")
-    .get();
-  if (!owner) return { sent: 0, failed: 0, review: 0 };
   const counts = { sent: 0, failed: 0, review: 0 };
-  const rows =
-    await store.sql`select r.body from records r left join email_deliveries d on d.id=r.id where r.kind='notifications' and d.sent_at is null and (d.last_error is null or d.last_error not in ('manual_review','suppressed')) order by r.body::jsonb->>'createdAt' limit 5`;
-  for (const row of rows) {
-    const n = JSON.parse(row.body);
-    // Commit first-attempt time before sending: a crash cannot reset the retry window.
-    await store.sql`insert into email_deliveries(id,first_attempt) values(${n.id},${Date.now()}) on conflict(id) do nothing`;
-    await store.transaction(async (tx) => {
-      const [delivery] =
-        await tx`select * from email_deliveries where id=${n.id} for update`;
-      if (
-        delivery.sent_at ||
-        ["manual_review", "suppressed"].includes(delivery.last_error)
-      )
-        return;
-      // Resend idempotency lasts 24h. Stop automatic retries before that window expires.
-      if (Date.now() - Number(delivery.first_attempt) >= 23 * 3600000) {
-        await tx`update email_deliveries set last_error='manual_review' where id=${n.id}`;
-        counts.review++;
-        return;
+  const now = Date.now();
+  const candidates = `select r.id, r.body from records r left join email_deliveries d on d.id=r.id where r.kind='notifications' and d.sent_at is null and (d.last_error is null or d.last_error not in ('manual_review','suppressed')) and (d.claimed_at is null or d.claimed_at<${now - CLAIM_MS}) and exists(select 1 from account where id='owner') order by r.body::jsonb->>'createdAt', r.id limit 5`;
+  const claimed = await store.atomic(
+    `insert into email_deliveries(id,first_attempt) select id, ${now} from (${candidates}) c on conflict(id) do nothing;
+    select jsonb_build_object(
+      'n', c.body::jsonb,
+      'delivery', to_jsonb(d),
+      'release', (select body::jsonb from records where kind='releases' and id=c.body::jsonb->>'eventId'),
+      'sub', (select body::jsonb from records where kind='subscriptions' and id=c.body::jsonb->>'subscriptionId'),
+      'title', (select body::jsonb from records where kind='titles' and id=c.body::jsonb->>'titleId'),
+      'outboxRevision', (select revision from outbox where id=c.id),
+      'owner', (select email from account where id='owner')
+    )::text as body from (${candidates}) c join email_deliveries d on d.id=c.id`,
+    (rows) => {
+      const review: string[] = [],
+        suppressed: string[] = [],
+        send: any[] = [];
+      for (const row of rows) {
+        const { n, delivery, release, sub, title, outboxRevision, owner } =
+          JSON.parse(row.body);
+        if (
+          delivery.sent_at ||
+          ["manual_review", "suppressed"].includes(delivery.last_error) ||
+          // Another job is sending this email right now.
+          (delivery.claimed_at && now - Number(delivery.claimed_at) < CLAIM_MS)
+        )
+          continue;
+        if (now - Number(delivery.first_attempt) >= REVIEW_MS) review.push(n.id);
+        else if (
+          !release ||
+          outboxRevision == null ||
+          release.revision !== outboxRevision ||
+          !sub ||
+          !matches(sub, release) ||
+          !sub.rules.includes(n.kind)
+        )
+          suppressed.push(n.id);
+        else send.push({ n, title, owner });
       }
-      const release = await store.getWith(tx, "releases", n.eventId);
-      const sub = await store.getWith(tx, "subscriptions", n.subscriptionId);
-      const [eventJob] = await tx`select revision from outbox where id=${n.id}`;
-      if (
-        !release ||
-        !eventJob ||
-        release.revision !== eventJob.revision ||
-        !sub ||
-        !matches(sub, release) ||
-        !sub.rules.includes(n.kind)
-      ) {
-        await tx`update email_deliveries set last_error='suppressed' where id=${n.id}`;
-        return;
-      }
-      try {
-        await sendReminder(
-          n,
-          await store.getWith(tx, "titles", n.titleId),
-          owner.email,
-          fetcher,
-        );
-        await tx`update email_deliveries set sent_at=${Date.now()},attempts=attempts+1,last_error=null where id=${n.id}`;
-        counts.sent++;
-      } catch (error) {
-        await tx`update email_deliveries set attempts=attempts+1,last_error=${error instanceof Error ? error.message : "Send failed"} where id=${n.id}`;
-        counts.failed++;
-      }
-    });
+      counts.review += review.length;
+      const ids = (xs: string[]) => xs.map(lit).join(",");
+      return {
+        statements: [
+          review.length
+            ? `update email_deliveries set last_error='manual_review' where id in (${ids(review)})`
+            : "",
+          suppressed.length
+            ? `update email_deliveries set last_error='suppressed' where id in (${ids(suppressed)})`
+            : "",
+          send.length
+            ? `update email_deliveries set claimed_at=${now} where id in (${ids(send.map((x) => x.n.id))})`
+            : "",
+        ],
+        result: send,
+      };
+    },
+  );
+  for (const { n, title, owner } of claimed) {
+    try {
+      await sendReminder(n, title, owner, fetcher);
+    } catch (error) {
+      const message = (error instanceof Error ? error.message : "Send failed").slice(0, 500);
+      await store.sql.unsafe(
+        `update email_deliveries set attempts=attempts+1,last_error=${lit(message)},claimed_at=null where id=${lit(n.id)}`,
+      );
+      counts.failed++;
+      continue;
+    }
+    // If this write fails, the claim expires and a later run retries with the same
+    // idempotency key, which the provider deduplicates.
+    await store.sql.unsafe(
+      `update email_deliveries set sent_at=${Date.now()},attempts=attempts+1,last_error=null,claimed_at=null where id=${lit(n.id)}`,
+    );
+    counts.sent++;
   }
   return counts;
 }

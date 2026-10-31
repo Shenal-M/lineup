@@ -1,0 +1,661 @@
+/* Upcoming agenda/poster views, Search, Following. */
+/* ---------- Page heading ---------- */
+.page-heading {
+  margin-bottom: 24px;
+}
+.page-heading h1 {
+  font-size: 22px;
+  letter-spacing: -0.025em;
+}
+.page-heading p {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+/* Preview/sample-data notice: same quiet meta line as the heading subtitle. */
+.notice {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.notice a {
+  color: var(--text-2);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  transition:
+    color 120ms var(--ease-out),
+    text-decoration-color 120ms var(--ease-out);
+}
+@media (hover: hover) {
+  .notice a:hover {
+    color: var(--text);
+    text-decoration-color: var(--text-3);
+  }
+}
+
+/* ---------- Upcoming toolbar ---------- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: auto;
+}
+.month-nav h2 {
+  min-width: 136px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.month-nav button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-2);
+}
+.filters,
+.view-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-1);
+}
+.filters button,
+.view-toggle button {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border-color: transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.view-toggle button {
+  width: 30px;
+  padding: 0;
+}
+.filters button.active,
+.view-toggle button.active {
+  background: var(--surface-3);
+  color: var(--text);
+}
+@media (hover: hover) {
+  .month-nav button:hover:not(:disabled),
+  .filters button:hover:not(.active):not(:disabled),
+  .view-toggle button:hover:not(.active):not(:disabled) {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+}
+
+/* ---------- Agenda: compact date column + rows ---------- */
+.agenda section {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.agenda section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.day {
+  position: sticky;
+  top: calc(var(--header) + 12px);
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+}
+.dow {
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.dom {
+  font: 600 22px/1 var(--sans);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.day.month {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---------- Title row (agenda, search, following) ---------- */
+/* Desktop rows are compact (36px thumb, 6px padding: ~66px tall); mobile
+   keeps a larger thumb and padding for comfortable touch targets. */
+.title-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin: 0 -8px;
+  padding: 6px 8px;
+  border-radius: var(--r-card);
+  transition: background-color 120ms var(--ease-out);
+}
+.title-row .poster {
+  border-radius: 6px;
+}
+.title-row .poster-art {
+  display: none;
+}
+.title-row:has(.card-name:active) {
+  background: var(--surface-2);
+}
+
+/* ---------- Poster card (grid) ---------- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 28px 20px;
+}
+.card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 4px;
+  min-width: 0;
+}
+.card .poster {
+  grid-column: 1 / -1;
+  margin-bottom: 10px;
+}
+.card .follow-btn {
+  margin: -4px -6px 0 0;
+}
+/* Press feedback for the stretched title button (rows tint instead). */
+.card .poster {
+  transition: transform 140ms var(--ease-out);
+}
+.card:has(.card-name:active) .poster {
+  transform: scale(0.98);
+}
+
+/* Shared card/row text: the title button stretches over the whole item. */
+.card-text {
+  min-width: 0;
+}
+.card-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-name::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+}
+.card-name:active:not(:disabled) {
+  transform: none;
+}
+.card-name:focus-visible {
+  outline: none;
+}
+.card-name:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.card-meta > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.dot.theatrical {
+  background: var(--theatrical);
+}
+.dot.streaming {
+  background: var(--streaming);
+}
+
+/* Poster */
+.poster {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 2 / 3;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--r-poster);
+  background: var(--poster-bg, var(--surface-2));
+  color: var(--ink, var(--text-2));
+  text-align: left;
+}
+.poster::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  transition: box-shadow 120ms var(--ease-out);
+}
+.poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 200ms var(--ease-out);
+}
+.poster-art {
+  position: absolute;
+  inset: 12px 12px auto;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  font: 600 17px/1.1 var(--sans);
+  letter-spacing: -0.02em;
+}
+button.poster {
+  cursor: pointer;
+}
+
+/* Follow bell */
+.follow-btn {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-3);
+}
+.follow-btn svg {
+  width: 15px;
+  height: 15px;
+}
+.follow-btn.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.follow-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+/* Bell ↔ BellRing swap (class added by <Bell> only after a state change). */
+.bell-swap {
+  animation: bell-swap 160ms var(--ease-out);
+}
+@keyframes bell-swap {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+    filter: blur(2px);
+  }
+}
+
+@media (hover: hover) {
+  .title-row:hover {
+    background: var(--surface-1);
+  }
+  :is(.card, .title-row) .card-name:hover:not(:disabled) {
+    color: var(--text);
+  }
+  .card:hover .poster::after {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  }
+  .card:hover .poster img {
+    transform: scale(1.02);
+  }
+  .follow-btn:hover:not(:disabled):not(.on) {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .follow-btn.on:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+}
+
+/* ---------- List motion ---------- */
+/* Month/view change: quick crossfade of the new list. */
+.releases.swap {
+  animation: list-swap 140ms var(--ease-out);
+}
+@keyframes list-swap {
+  from {
+    opacity: 0;
+  }
+}
+/* First mount: a barely-there stagger over the first 6 items, capped so the
+   last one settles by ~260ms (this view is opened many times a day). */
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger) > * {
+  --i: 5;
+  animation: row-in 160ms var(--ease-out) both;
+  animation-delay: calc(var(--i) * 20ms);
+}
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+  > :nth-child(1) {
+  --i: 0;
+}
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+  > :nth-child(2) {
+  --i: 1;
+}
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+  > :nth-child(3) {
+  --i: 2;
+}
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+  > :nth-child(4) {
+  --i: 3;
+}
+:is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+  > :nth-child(5) {
+  --i: 4;
+}
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ---------- Empty state and dates-TBA link ---------- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 48px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  text-align: center;
+}
+.empty h2 {
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+.empty p {
+  max-width: 360px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.empty .primary {
+  margin-top: 12px;
+}
+dialog .empty {
+  margin-top: 8px;
+  padding: 32px 16px;
+  border: 0;
+}
+/* Sits under the agenda like one more row: same radius, quiet meta text. */
+.horizon-link {
+  justify-content: space-between;
+  width: 100%;
+  min-height: 40px;
+  margin-top: 20px;
+  padding: 8px 12px;
+  border-color: var(--border);
+  border-radius: var(--r-card);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 400;
+}
+.horizon-link b {
+  margin-right: 2px;
+  font: 500 12px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.horizon-link .icon {
+  color: var(--text-3);
+}
+.horizon-link:active:not(:disabled) {
+  transform: scale(0.99);
+}
+@media (hover: hover) {
+  .horizon-link:hover:not(:disabled) {
+    background: var(--surface-1);
+    color: var(--text);
+  }
+}
+
+/* ---------- Search ---------- */
+.search-form {
+  display: flex;
+  gap: 8px;
+  max-width: 560px;
+  margin-bottom: 28px;
+}
+.search-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.search-field .icon {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  color: var(--text-3);
+  translate: 0 -50%;
+  pointer-events: none;
+}
+.search-input {
+  height: 40px;
+  padding-left: 36px;
+  font-size: 15px;
+}
+.search-form .primary {
+  flex: none;
+  min-height: 40px;
+}
+.list-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+.list-label span {
+  font: 12px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 760px) {
+  .page-heading {
+    margin-bottom: 16px;
+  }
+  .page-heading h1 {
+    font-size: 20px;
+  }
+  .toolbar {
+    flex-wrap: wrap;
+    row-gap: 12px;
+    margin-bottom: 16px;
+  }
+  .month-nav {
+    margin-left: -12px;
+  }
+  .month-nav button {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+  .month-nav h2 {
+    min-width: 120px;
+  }
+  /* Invisible 40px hit areas around the compact segmented buttons. */
+  .view-toggle button {
+    position: relative;
+  }
+  .view-toggle button::after {
+    content: "";
+    position: absolute;
+    inset: -6px -1px;
+  }
+  /* Filters become a full-bleed chip row that scrolls with faded edges. */
+  .filters {
+    order: 3;
+    width: calc(100% + 2 * var(--pad));
+    margin: -3px calc(-1 * var(--pad));
+    padding: 3px var(--pad);
+    gap: 6px;
+    overflow-x: auto;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    scrollbar-width: none;
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--pad),
+      #000 calc(100% - var(--pad)),
+      transparent
+    );
+  }
+  .filters::-webkit-scrollbar {
+    display: none;
+  }
+  .filters button {
+    position: relative;
+    flex: none;
+    height: 34px;
+    min-height: 34px;
+    padding: 0 14px;
+    border-color: var(--border);
+    border-radius: 999px;
+  }
+  /* Extends into the row's 3px padding: a 40px tap height inside the
+     scroller's clip. */
+  .filters button::after {
+    content: "";
+    position: absolute;
+    inset: -3px 0;
+  }
+  .filters button.active {
+    border-color: var(--border-strong);
+  }
+  .agenda section {
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .agenda section {
+    padding: 12px 0;
+  }
+  .day {
+    top: calc(var(--header) + 8px);
+    padding-top: 10px;
+  }
+  .dom {
+    font-size: 20px;
+  }
+  .title-row {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 8px;
+  }
+  .follow-btn {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+  .title-row .follow-btn {
+    margin-right: -4px;
+  }
+  .card .follow-btn {
+    margin: -8px -10px -10px 0;
+  }
+  .horizon-link {
+    min-height: 44px;
+    margin-top: 16px;
+  }
+  .cards {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 24px 12px;
+  }
+  .poster-art {
+    font-size: 15px;
+  }
+  .search-form {
+    margin-bottom: 20px;
+  }
+  .search-input {
+    font-size: 16px; /* no iOS focus zoom */
+  }
+  .empty {
+    padding: 40px 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bell-swap,
+  .releases.swap,
+  :is(.releases.stagger > .agenda, .releases.stagger > .cards, .rows.stagger)
+    > * {
+    animation: none;
+  }
+  .title-row,
+  .poster img,
+  .poster::after,
+  .notice a {
+    transition: none;
+  }
+  .card:hover .poster img,
+  .card:has(.card-name:active) .poster,
+  .follow-btn:active:not(:disabled),
+  .horizon-link:active:not(:disabled) {
+    transform: none;
+  }
+}
