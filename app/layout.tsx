@@ -5,6 +5,7 @@ import "./styles/shell.css";
 import "./styles/browse.css";
 import "./styles/details.css";
 import "./styles/search.css";
+import "./styles/following.css";
 import "./styles/account.css";
 const sans = Geist({
   subsets: ["latin"],

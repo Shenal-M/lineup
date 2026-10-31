@@ -12,6 +12,9 @@ export type Title = {
   imdbId?: string | null;
   /** TMDB popularity score, for sorting upcoming lists. */
   popularity?: number | null;
+  /** Search results: first release / first air date (YYYY-MM-DD) and TMDB rating (0–10). */
+  releaseDate?: string | null;
+  rating?: number | null;
   /** TV: the show's streaming network (else its first network) and TMDB logo. */
   network?: { name: string; logo: string | null } | null;
   seasons?: { number: number; name: string; episodeCount: number }[];

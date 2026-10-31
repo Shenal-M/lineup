@@ -176,8 +176,8 @@ aside nav b {
   flex: none;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 36px;
+  width: var(--poster-xs);
+  aspect-ratio: 2 / 3;
   overflow: hidden;
   border-radius: 4px;
   background: var(--surface-3);
@@ -219,10 +219,6 @@ aside nav b {
   color: var(--text-3);
 }
 
-/* Following page: Movies and TV shows sections. */
-.following-group + .following-group {
-  margin-top: 28px;
-}
 .profile {
   display: flex;
   align-items: center;
@@ -460,6 +456,7 @@ button.sheet-item:active:not(:disabled) {
     background: var(--bg);
   }
   .brand-link {
+    align-self: center; /* the desktop rail pins it to the top */
     margin: 0 0 0 -8px;
   }
   .aside-bottom,
@@ -528,7 +525,6 @@ button.sheet-item:active:not(:disabled) {
     border-radius: 0;
     color: var(--text-3);
     font-size: 11px;
-    -webkit-tap-highlight-color: transparent;
   }
   aside nav a .icon {
     width: 20px;

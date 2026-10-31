@@ -256,22 +256,57 @@ export async function seasonEpisodes(id: string, number: number) {
     })),
   };
 }
+// TMDB genre ids used in search results (which carry ids, not names).
+const GENRES: Record<number, string> = {
+  28: "Action",
+  12: "Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  14: "Fantasy",
+  36: "History",
+  27: "Horror",
+  10402: "Music",
+  9648: "Mystery",
+  10749: "Romance",
+  878: "Science Fiction",
+  10770: "TV Movie",
+  53: "Thriller",
+  10752: "War",
+  37: "Western",
+  10759: "Action & Adventure",
+  10762: "Kids",
+  10763: "News",
+  10764: "Reality",
+  10765: "Sci-Fi & Fantasy",
+  10766: "Soap",
+  10767: "Talk",
+  10768: "War & Politics",
+};
 export async function searchTMDB(q: string) {
   const d: any = await tmdb("/search/multi?query=" + encodeURIComponent(q), HOUR);
   return (d.results || [])
     .filter((x: any) => ["movie", "tv"].includes(x.media_type))
-    .map((x: any) => ({
-      id: `tmdb-${x.media_type}-${x.id}`,
-      tmdbId: x.id,
-      name: x.title || x.name,
-      mediaType: x.media_type,
-      year:
-        Number((x.release_date || x.first_air_date || "").slice(0, 4)) || null,
-      synopsis: x.overview,
-      poster: poster(x.poster_path),
-      genre: x.media_type === "tv" ? "TV series" : "Movie",
-      popularity: typeof x.popularity === "number" ? x.popularity : null,
-    }));
+    .map((x: any) => {
+      const date = x.release_date || x.first_air_date || "";
+      return {
+        id: `tmdb-${x.media_type}-${x.id}`,
+        tmdbId: x.id,
+        name: x.title || x.name,
+        mediaType: x.media_type,
+        year: Number(date.slice(0, 4)) || null,
+        synopsis: x.overview,
+        poster: poster(x.poster_path),
+        genre: (x.genre_ids || []).map((g: number) => GENRES[g]).filter(Boolean).join(" · "),
+        popularity: typeof x.popularity === "number" ? x.popularity : null,
+        // First release (movie) or first air date (TV), and a rating once enough people voted.
+        releaseDate: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
+        rating: x.vote_count >= 20 ? Math.round(x.vote_average * 10) / 10 : null,
+      };
+    });
 }
 // Upcoming titles of one kind with a release in `market` during `month` (YYYY-MM).
 // Discovery finds candidates; each candidate's details (cached) give the regional dates.

@@ -215,14 +215,13 @@
 }
 
 /* ---------- Title row (agenda, search, following) ---------- */
-/* Desktop rows are compact (36px thumb, 6px padding: ~66px tall); mobile
-   keeps a larger thumb and padding for comfortable touch targets. */
+/* Every list row uses the --poster-sm thumb, on desktop and mobile. */
 .title-row {
   position: relative;
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-columns: var(--poster-sm) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   margin: 0 -8px;
   padding: 6px 8px;
   border-radius: var(--r-card);
@@ -778,8 +777,7 @@ dialog .empty {
     font-size: 20px;
   }
   .title-row {
-    grid-template-columns: 40px minmax(0, 1fr) auto;
-    gap: 12px;
+    gap: 14px;
     padding: 8px;
   }
   .follow-btn {

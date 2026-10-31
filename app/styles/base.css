@@ -39,6 +39,14 @@
   --r-card: 12px;
   --r-modal: 16px;
   --r-poster: 10px;
+  /* Poster widths (all 2:3), the same on desktop and mobile:
+     xs  thumbnails (Tracking rail, search suggestions)
+     sm  every list row (Movies, TV shows, Following, Search)
+     lg  the title details dialog
+     The poster grid is fluid (cards at least 148px wide). */
+  --poster-xs: 28px;
+  --poster-sm: 48px;
+  --poster-lg: 112px;
   --shadow-modal: 0 24px 64px -12px rgba(0, 0, 0, 0.6);
 
   --sidebar: 220px;
@@ -64,6 +72,17 @@ html {
   background: var(--bg);
   scrollbar-color: var(--surface-3) transparent;
   -webkit-text-size-adjust: 100%;
+  /* No grey/blue tap flash on mobile: controls show their own press state
+     (buttons scale to 0.97, rows tint, posters shrink slightly). */
+  -webkit-tap-highlight-color: transparent;
+}
+/* No double-tap-to-zoom delay on controls, so taps respond immediately. */
+a,
+button,
+summary,
+label,
+select {
+  touch-action: manipulation;
 }
 body {
   margin: 0;
@@ -156,6 +175,14 @@ button:active:not(:disabled) {
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+/* Touch screens: plain links and disclosure toggles dim while pressed, like
+   native controls; buttons already scale. */
+@media (hover: none) {
+  a:not(.primary):active,
+  summary:active {
+    opacity: 0.6;
+  }
 }
 .primary {
   display: inline-flex;

@@ -1,13 +1,82 @@
-/* Search page: live suggestions combobox and the result rows. */
+/* Search page: search field, live suggestions combobox and the result rows. */
 
-/* ---------- Suggestions ---------- */
-/* Anchored to the whole form (input + button) so it stays usable at 390px. */
+/* ---------- Field ---------- */
+/* Spans the results column (lifts browse.css's 560px cap): one calm 48px
+   field with the submit folded in as a key-cap that only shows once there is
+   a query. The form also anchors the suggestions list. */
 .search-form {
   position: relative;
+  max-width: none;
+  margin-bottom: 16px;
 }
-.search-field.loading .icon {
+.search-input {
+  height: 48px;
+  padding: 0 16px 0 44px;
+  border-radius: var(--r-card);
+  background: var(--surface-1);
+  font-size: 15px;
+}
+.search-field:has(.search-submit:not([hidden])) .search-input {
+  padding-right: 52px;
+}
+.search-input::-webkit-search-cancel-button {
+  margin-right: 4px;
+  cursor: pointer;
+}
+.search-field > .icon {
+  left: 16px;
+}
+.search-field.loading > .icon {
   animation: loading-pulse 1.4s ease-in-out infinite;
 }
+@media (hover: hover) {
+  .search-input:hover:not(:focus-visible):not(:disabled) {
+    border-color: var(--border-strong);
+  }
+}
+/* Trailing submit: reads as an Enter key-cap, not a second primary button. */
+.search-submit {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 32px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-color: var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  translate: 0 -50%;
+}
+.search-submit .icon {
+  position: static;
+  translate: none;
+}
+@media (hover: hover) {
+  .search-submit:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--surface-2);
+    color: var(--text);
+  }
+}
+.search-form + .empty {
+  margin-top: 12px;
+}
+/* Pre-search hint: one quiet line under the field. */
+.search-hint {
+  font-size: 13px;
+  color: var(--text-3);
+}
+.search-hint kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font: 11px var(--mono);
+  color: var(--text-2);
+}
+
+/* ---------- Suggestions ---------- */
 .suggest {
   position: absolute;
   top: calc(100% + 6px);
@@ -35,7 +104,7 @@
 }
 .suggest-option {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: var(--poster-xs) minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 6px 8px;
@@ -49,7 +118,7 @@
 }
 .suggest-thumb {
   position: relative;
-  width: 32px;
+  width: var(--poster-xs);
   aspect-ratio: 2 / 3;
   overflow: hidden;
   border-radius: 4px;
@@ -91,9 +160,19 @@
 .suggest-followed {
   color: var(--accent);
 }
+/* TMDB rating (suggestions and rows): small filled star, muted. */
+.rating {
+  color: var(--text-2);
+}
+.rating .icon {
+  display: inline-block;
+  margin-right: 3px;
+  vertical-align: -1px;
+  fill: var(--text-3);
+}
 /* Trailing "See all results" option: one quiet line under a hairline. */
 .suggest-all {
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: var(--poster-xs) minmax(0, 1fr);
   margin-top: 4px;
   min-height: 40px;
   color: var(--text-2);
@@ -120,47 +199,74 @@
 }
 
 /* ---------- Result rows ---------- */
+/* One column; two once the results column is wide (desktop with the
+   sidebar: ~1100px). Rows keep browse.css's -8px bleed, so the column gap
+   leaves room for both hover tints. */
+.results {
+  container-type: inline-size;
+  margin-top: 28px;
+}
+@container (min-width: 880px) {
+  .result-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 32px;
+  }
+}
 .result-row {
-  grid-template-columns: 68px minmax(0, 1fr) auto;
   gap: 16px;
   padding: 8px;
-}
-.result-row .poster {
-  border-radius: 8px;
-}
-/* No-poster fallback: the title in small type, like the poster grid. */
-.result-row .poster-art {
-  display: -webkit-box;
-  inset: 8px 8px auto;
-  overflow: hidden;
-  font-size: 11px;
-  line-height: 1.2;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
 }
 .result-row .card-name {
   font-size: 15px;
 }
 .result-row .card-meta {
   margin-top: 3px;
-}
-.result-date {
   color: var(--text-2);
 }
-.result-synopsis {
-  display: -webkit-box;
-  max-width: 68ch;
-  margin-top: 6px;
+.result-genres,
+.result-status {
   overflow: hidden;
-  font-size: 13px;
-  line-height: 1.45;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--text-3);
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+}
+.result-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.result-status span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.result-status .icon {
+  color: var(--text-3);
 }
 
 /* ---------- Mobile ---------- */
 @media (max-width: 760px) {
+  .search-form {
+    margin-bottom: 12px;
+  }
+  .search-input {
+    font-size: 16px; /* no iOS focus zoom */
+  }
+  /* Comfortable tap target without a bigger visual key-cap. */
+  .search-submit::after {
+    content: "";
+    position: absolute;
+    inset: -8px -6px;
+  }
+  .results {
+    margin-top: 20px;
+  }
   .suggest-option {
     min-height: 56px;
     padding: 6px;
@@ -169,33 +275,29 @@
     min-height: 44px;
   }
   .result-row {
-    grid-template-columns: 56px minmax(0, 1fr) auto;
     gap: 12px;
-  }
-  .result-row .poster-art {
-    inset: 6px 6px auto;
-    font-size: 10px;
   }
   .result-row .card-name {
     font-size: 14px;
   }
-  .result-synopsis {
+  .result-status {
     margin-top: 4px;
-    font-size: 12px;
-  }
-}
-@media (max-width: 360px) {
-  .result-synopsis {
-    display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .suggest,
-  .search-field.loading .icon {
+  .search-field.loading > .icon {
     animation: none;
   }
   .suggest-option {
     transition: none;
+  }
+}
+
+/* Touch keyboards have no Enter key-cap to point at. */
+@media (hover: none) and (pointer: coarse) {
+  .search-hint-keys {
+    display: none;
   }
 }

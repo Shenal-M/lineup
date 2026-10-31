@@ -8,8 +8,8 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { BellRing } from "lucide-react";
-import { Bell, Empty, Heading, Icon, Poster } from "./ui";
+import { BellRing, CalendarClock, CornerDownLeft, Star } from "lucide-react";
+import { Bell, Empty, Heading, Icon, Poster, channel } from "./ui";
 import { api, dateLabel, type Release, type Title } from "./types";
 import { ConnectNotice, type Shared } from "./pages";
 
@@ -30,6 +30,26 @@ const SUGGEST_MAX = 7;
 const SUGGEST_DELAY = 250;
 const suggestible = (q: string) => q.replace(/\s/g, "").length >= SUGGEST_MIN;
 const kind = (t: Title) => (t.mediaType === "tv" ? "TV series" : "Movie");
+const fullDate = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
+// Local calendar date as YYYY-MM-DD, comparable with `releaseDate`.
+const today = () => new Date().toLocaleDateString("en-CA");
+
+/** TMDB rating, muted; renders nothing when TMDB has too few votes. */
+function Rating({ value }: { value?: number | null }) {
+  if (value == null) return null;
+  return (
+    <span className="rating">
+      <Star className="icon" size={11} strokeWidth={0} aria-hidden="true" />
+      <span className="sr-only">Rated </span>
+      {value.toFixed(1)}
+    </span>
+  );
+}
 
 // Suggestions bypass `api()` so they can be aborted; failures stay silent
 // (the full search reports errors).
@@ -176,7 +196,7 @@ export function SearchPage({
         {!tmdb && <ConnectNotice>to search.</ConnectNotice>}
       </Heading>
       <form className="search-form" role="search" onSubmit={search}>
-        <span className={`search-field${loading ? " loading" : ""}`}>
+        <span className={`search-field${loading || busy ? " loading" : ""}`}>
           <Icon name="search" />
           <input
             className="search-input"
@@ -191,7 +211,7 @@ export function SearchPage({
             }
             autoComplete="off"
             spellCheck={false}
-            placeholder="Movies and TV series"
+            placeholder="Search movies and TV series"
             value={query}
             onChange={(e) => {
               const value = e.target.value;
@@ -207,10 +227,22 @@ export function SearchPage({
             }}
             onBlur={() => setOpen(false)}
           />
+          {/* Enter submits; this key-cap is the same action for pointers. */}
+          <button
+            className="search-submit"
+            aria-label={busy ? "Searching…" : "Search"}
+            title="Search (Enter)"
+            disabled={busy || !tmdb}
+            hidden={!query.trim()}
+          >
+            <CornerDownLeft
+              className="icon"
+              size={14}
+              strokeWidth={1.75}
+              aria-hidden="true"
+            />
+          </button>
         </span>
-        <button className="primary" disabled={busy || !tmdb}>
-          {busy ? "Searching…" : "Search"}
-        </button>
         {/* Rendered even when closed so aria-controls always resolves.
             mousedown is prevented so a click doesn't blur the input first. */}
         <ul
@@ -239,6 +271,12 @@ export function SearchPage({
                   <span className="suggest-name">{t.name}</span>
                   <span className="suggest-meta">
                     {[t.year, kind(t)].filter(Boolean).join(" · ")}
+                    {t.rating != null && (
+                      <>
+                        {" · "}
+                        <Rating value={t.rating} />
+                      </>
+                    )}
                   </span>
                 </span>
                 {lookup.followed.has(t.id) && (
@@ -271,18 +309,20 @@ export function SearchPage({
           )}
         </ul>
         <span className="sr-only" aria-live="polite">
-          {expanded
-            ? `${suggestions!.length} suggestion${suggestions!.length === 1 ? "" : "s"}`
-            : ""}
+          {busy
+            ? "Searching…"
+            : expanded
+              ? `${suggestions!.length} suggestion${suggestions!.length === 1 ? "" : "s"}`
+              : ""}
         </span>
       </form>
       {results?.length ? (
-        <>
+        <section className="results">
           <h2 className="list-label">
             Results
             <span>{results.length}</span>
           </h2>
-          <div className="rows stagger">
+          <div className="rows result-grid stagger">
             {results.map((t) => (
               <ResultRow
                 key={t.id}
@@ -293,21 +333,30 @@ export function SearchPage({
               />
             ))}
           </div>
-        </>
+        </section>
       ) : results ? (
         <Empty title="No matches.">
           Nothing found for “{searched}”. Try another spelling.
         </Empty>
+      ) : tmdb ? (
+        <p className="search-hint">
+          Suggestions appear as you type.
+          <span className="search-hint-keys">
+            {" "}
+            Press <kbd>Enter</kbd> for all results.
+          </span>
+        </p>
       ) : null}
     </>
   );
 }
 
 /**
- * A search result: larger poster, year · type, and a short synopsis. Same
- * pattern as Card: the title button stretches over the row (one tab stop) and
- * the bell sits above it. The release date is only shown for followed titles;
- * unfollowed results never have one stored.
+ * A search result: poster, type · year · rating, genres, and a release hint.
+ * Same pattern as Card: the title button stretches over the row (one tab
+ * stop) and the bell sits above it. A followed title shows its stored release
+ * in the current market; otherwise an upcoming first release is hinted from
+ * TMDB's date.
  */
 const ResultRow = memo(function ResultRow({
   title: t,
@@ -320,7 +369,15 @@ const ResultRow = memo(function ResultRow({
   followed: boolean;
   onSelect: (t: Title) => void;
 }) {
-  const date = followed && e?.date ? dateLabel(e) : null;
+  const genres = t.genre?.split(" · ").filter(Boolean).slice(0, 3).join(" · ");
+  const status =
+    followed && e
+      ? `${dateLabel(e)} · ${channel(e)}`
+      : t.releaseDate && t.releaseDate.slice(0, 10) > today()
+        ? `${t.mediaType === "tv" ? "Premieres" : "Releases"} ${fullDate.format(
+            new Date(t.releaseDate.slice(0, 10) + "T12:00Z"),
+          )}`
+        : null;
   return (
     <article className="title-row result-row">
       <Poster title={t} />
@@ -330,11 +387,27 @@ const ResultRow = memo(function ResultRow({
         </button>
         <div className="card-meta">
           <span>
-            {[t.year, kind(t)].filter(Boolean).join(" · ")}
-            {date && <span className="result-date"> · {date}</span>}
+            {[kind(t), t.year].filter(Boolean).join(" · ")}
+            {t.rating != null && (
+              <>
+                {" · "}
+                <Rating value={t.rating} />
+              </>
+            )}
           </span>
         </div>
-        {t.synopsis && <p className="result-synopsis">{t.synopsis}</p>}
+        {genres && <div className="result-genres">{genres}</div>}
+        {status && (
+          <div className="result-status">
+            <CalendarClock
+              className="icon"
+              size={12}
+              strokeWidth={1.75}
+              aria-hidden="true"
+            />
+            <span>{status}</span>
+          </div>
+        )}
       </div>
       <button
         className={`follow-btn ${followed ? "on" : ""}`}
