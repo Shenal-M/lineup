@@ -115,7 +115,17 @@ function network(d: any) {
       }
     : null;
 }
-function titleFrom(d: any, mediaType: "movie" | "tv") {
+// A TMDB next/last episode, or null when absent. The date is the original air date.
+function episodeFrom(e: any) {
+  if (!e || !(e.season_number > 0) || !(e.episode_number > 0)) return null;
+  return {
+    season: e.season_number as number,
+    episode: e.episode_number as number,
+    date: typeof e.air_date === "string" && e.air_date ? day(e.air_date) : null,
+    ...(e.name ? { name: String(e.name) } : {}),
+  };
+}
+export function titleFrom(d: any, mediaType: "movie" | "tv") {
   const date = mediaType === "movie" ? d.release_date : d.first_air_date;
   const imdbId = d.imdb_id || d.external_ids?.imdb_id || null;
   return {
@@ -139,6 +149,9 @@ function titleFrom(d: any, mediaType: "movie" | "tv") {
               name: s.name,
               episodeCount: s.episode_count,
             })),
+          // Kept fresh by the ~12h re-fetch of followed titles; null clears a stale one.
+          nextEpisode: episodeFrom(d.next_episode_to_air),
+          lastEpisode: episodeFrom(d.last_episode_to_air),
         }
       : {}),
   };
@@ -201,15 +214,21 @@ export function movieReleases(d: any): Release[] {
   return out;
 }
 // Season premieres of a show on its streaming network. Seasons that aired more than
-// 60 days ago are history, not upcoming releases.
+// 60 days ago are history, not upcoming releases, unless the season is still airing
+// (its next episode is announced).
 export function tvReleases(d: any, today = new Date().toISOString().slice(0, 10)): Release[] {
   const service = (d.networks || []).map((n: any) => NETWORKS[n.id]).find(Boolean);
   if (!service) return [];
   const titleId = `tmdb-tv-${d.id}`;
-  const cutoff = addDays(today, -60);
+  const cutoff = addDays(today, -60),
+    airing = d.next_episode_to_air?.season_number;
   const out: Release[] = [];
   for (const s of d.seasons || []) {
-    if (!(s.season_number > 0) || typeof s.air_date !== "string" || day(s.air_date) < cutoff)
+    if (
+      !(s.season_number > 0) ||
+      typeof s.air_date !== "string" ||
+      (day(s.air_date) < cutoff && s.season_number !== airing)
+    )
       continue;
     for (const market of US_ONLY.has(service) ? ["US"] : MARKETS)
       out.push({
@@ -241,6 +260,36 @@ export async function titleDetails(id: string): Promise<Entry> {
   }
   const d = await tmdb(`/tv/${m[2]}?append_to_response=external_ids`);
   return { title: titleFrom(d, "tv"), releases: tvReleases(d) };
+}
+// The trailer to play from a TMDB videos list: YouTube trailers only, preferring
+// official, then English, then one named "Official Trailer", then the earliest published.
+export function pickTrailer(videos: any[]): { key: string; name: string } | null {
+  const score = (v: any) =>
+    (v.official === true ? 4 : 0) +
+    (v.iso_639_1 === "en" ? 2 : 0) +
+    (/official trailer/i.test(v.name || "") ? 1 : 0);
+  const best = (videos || [])
+    .filter(
+      (v) => v?.site === "YouTube" && v.type === "Trailer" && typeof v.key === "string" && v.key,
+    )
+    .sort(
+      (a, b) =>
+        score(b) - score(a) ||
+        String(a.published_at || "9999").localeCompare(String(b.published_at || "9999")),
+    )[0];
+  return best ? { key: best.key, name: best.name || "Trailer" } : null;
+}
+// The official YouTube trailer to play for a title: a movie's trailer, or a show's
+// first-season trailer (else the show's own).
+export async function titleTrailer(id: string): Promise<{ key: string; name: string } | null> {
+  const m = id.match(TITLE_ID);
+  if (!m) throw new HttpError("Title not found", 404);
+  if (m[1] === "movie") return pickTrailer((await tmdb(`/movie/${m[2]}/videos`)).results);
+  // A show without a season 1 answers 404; fall back to the show's videos then too.
+  const first = await tmdb(`/tv/${m[2]}/season/1/videos`).catch(() => null);
+  return (
+    pickTrailer(first?.results) || pickTrailer((await tmdb(`/tv/${m[2]}/videos`)).results)
+  );
 }
 export async function seasonEpisodes(id: string, number: number) {
   const m = id.match(TITLE_ID);

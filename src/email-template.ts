@@ -17,7 +17,8 @@ const C = {
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
-const LABELS: Record<string, { eyebrow: string; lead: string }> = {
+// Also used for push notification titles (src/push.ts).
+export const LABELS: Record<string, { eyebrow: string; lead: string }> = {
   announced: { eyebrow: "Date announced", lead: "has a release date" },
   changed: { eyebrow: "Release updated", lead: "has a new release date" },
   week: { eyebrow: "Coming in one week", lead: "is out in one week" },
@@ -51,7 +52,8 @@ export type ReminderInput = {
 const escape = (s: string) =>
   s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-function when(date: string | null | undefined, precision = "day") {
+// short: "Sun, Nov 1" / "Dec 2026" for push notifications instead of the full form.
+export function when(date: string | null | undefined, precision = "day", short = false) {
   if (!date || !/^\d{4}-\d{2}-\d{2}/.test(date) || precision === "unknown")
     return "Date to be announced";
   const d = new Date(date.slice(0, 10) + "T12:00Z"),
@@ -60,11 +62,19 @@ function when(date: string | null | undefined, precision = "day") {
   if (precision === "year") return date.slice(0, 4);
   if (precision === "quarter")
     return `Q${Math.ceil((d.getUTCMonth() + 1) / 3)} ${date.slice(0, 4)}`;
-  if (precision === "month") return fmt({ month: "long", year: "numeric" });
-  return fmt({ weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  if (precision === "month") return fmt({ month: short ? "short" : "long", year: "numeric" });
+  return short
+    ? fmt({
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        // The year only when it isn't this one.
+        ...(d.getUTCFullYear() !== new Date().getUTCFullYear() ? { year: "numeric" } : {}),
+      })
+    : fmt({ weekday: "long", month: "long", day: "numeric", year: "numeric" });
 }
 
-function where(n: ReminderInput["notification"], season?: number) {
+export function where(n: ReminderInput["notification"], season?: number) {
   const place =
     n.medium === "theatrical"
       ? "In cinemas"

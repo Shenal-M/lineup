@@ -34,6 +34,7 @@ See [.env.example](.env.example). All values are server-only.
 | `SETUP_KEY` | Required to create the owner account on an HTTPS host |
 | `TMDB_TOKEN` | TMDB API Read Access Token (the long bearer token, not the API key). Without it, only followed titles are shown |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Optional email reminders |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Optional phone notifications (Web Push). Generate with `npx web-push generate-vapid-keys`; subject like `mailto:you@example.com` |
 | `CRON_SECRET` | Bearer secret for `/api/cron/reminders` |
 | `APP_TOKEN` | Optional server-to-server token; bypasses login, leave unset unless needed |
 
@@ -66,14 +67,15 @@ Create `anon` and `authenticated` roles in that database first to mirror Supabas
 - Search, Following and Settings pages; title popup with poster, synopsis, tags and per-channel date rows.
 - Independent bell per streaming service or theatrical release, including dates not yet announced.
 - Source-backed manual dates and corrections; material changes create revisions and supersede stale alerts.
-- In-app reminders for announcements, changes and 7-day / 1-day / release-day alerts; email via Resend.
+- In-app reminders for announcements, changes and 7-day / 1-day / release-day alerts; email via Resend; phone notifications via Web Push.
+- Installable app (web manifest, maskable icons, shortcuts); a service worker shows notifications only and caches nothing.
 - Single owner account: scrypt password hashes, hashed 30-day HttpOnly session cookies, rate-limited sign-in.
 
 ## Known limits
 
 - Dates are only as complete as TMDB. A movie's digital date is its first rent/buy/VOD release, not necessarily a subscription premiere; Blu-ray/DVD dates are not shown. TV dates are original air dates on the show's network (Hulu, Peacock, Paramount+ and HBO Max count for the US market only). Add or correct dates manually on followed titles.
 - The upcoming lists take the most popular TMDB matches for the month (two pages of cinema releases, one of digital releases, two of TV shows).
-- No password-reset email, push notifications or weekly digest.
+- No password-reset email or weekly digest. Phone notifications go out with the hourly job, at most once each, and only for reminders from the last 24 hours.
 - Dates are never substituted from other markets; TMDB has little Sri Lankan data.
 - Complete TMDB logo attribution before public distribution.
 
@@ -83,6 +85,7 @@ Create `anon` and `authenticated` roles in that database first to mirror Supabas
 - `src/components/` — React UI.
 - `src/lib/` — API dispatch and the per-process runtime (store + auth).
 - `src/postgres-store.ts`, `src/model.ts` — persistence, release semantics and notification outbox.
-- `src/auth.ts`, `src/email.ts`, `src/providers.ts` — owner auth, Resend delivery, TMDB adapter.
+- `src/auth.ts`, `src/email.ts`, `src/push.ts`, `src/providers.ts` — owner auth, Resend delivery, Web Push delivery, TMDB adapter.
+- `app/manifest.ts`, `public/icons/`, `public/sw.js` — installed-app manifest, icons and the notification service worker.
 - `supabase/` — SQL migrations, migrate script and the hourly cron schedule.
 - [docs/RESEARCH.md](docs/RESEARCH.md) — original product research.

@@ -9,8 +9,9 @@ import {
   type RefObject,
   type SVGProps,
 } from "react";
-import type { Title, Release } from "./types";
+import type { Title, Release, Episode } from "./types";
 import { dateLabel } from "./types";
+import { dayInZone } from "../model";
 import {
   Bell as BellIcon,
   BellRing,
@@ -219,10 +220,37 @@ export function shortDate(date?: string | null) {
   });
 }
 /**
+ * The next episode of a season that has already premiered (before `today`) and is
+ * still airing: the title's next episode is in that season and dated today or later.
+ * Undefined for a premiere still to come, or a season finished or on a break.
+ */
+export function airingEpisode(
+  t: Title,
+  e: Release | undefined,
+  today: string,
+): (Episode & { date: string }) | undefined {
+  const n = t.nextEpisode;
+  if (
+    !e?.season ||
+    e.precision !== "day" ||
+    !e.date ||
+    e.date >= today ||
+    n?.season !== e.season ||
+    !n.date ||
+    n.date < today
+  )
+    return undefined;
+  return n as Episode & { date: string };
+}
+/** Today in the browser's own time zone, for components without the user's settings. */
+const localToday = () =>
+  dayInZone(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone);
+/**
  * A title as a poster card (grid) or a compact row (lists).
  * The title button is stretched over the whole card so it is one tab stop;
  * the bell sits above it. `dated` adds the release date to the meta line
- * (off in the agenda, where the date column already shows it).
+ * (off in the agenda, where the date column already shows it). A TV season
+ * that has premiered and is still airing also shows its next episode.
  * Memoised: props are values or stable references, so rows skip re-rendering
  * when unrelated app state changes.
  */
@@ -233,6 +261,7 @@ export const Card = memo(function Card({
   onSelect,
   layout = "card",
   dated = true,
+  today,
 }: {
   title: Title;
   event?: Release;
@@ -241,12 +270,16 @@ export const Card = memo(function Card({
   onSelect: (t: Title) => void;
   layout?: "card" | "row";
   dated?: boolean;
+  /** Today (YYYY-MM-DD) in the user's zone; defaults to the browser's. */
+  today?: string;
 }) {
-  const genre = t.genre?.split(" · ")[0];
+  const genre = t.genre?.split(" · ")[0],
+    airing = e?.season ? airingEpisode(t, e, today || localToday()) : undefined,
+    next = airing && `Next: E${airing.episode} · ${shortDate(airing.date)}`;
   const meta = e
     ? dated
-      ? [dateLabel(e), channel(e)]
-      : [channel(e), genre]
+      ? [dateLabel(e), channel(e), next]
+      : [channel(e), next || genre]
     : [t.year, t.mediaType === "tv" ? "TV series" : "Movie", "Date TBA"];
   return (
     <article className={layout === "row" ? "title-row" : "card"}>

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { memo, useMemo, useState } from "react";
-import { Empty, Heading, Poster, channel } from "./ui";
+import { Empty, Heading, Poster, airingEpisode, channel, shortDate } from "./ui";
 import { countries, dateLabel, type Release, type Title } from "./types";
 import { dayInZone, matches } from "../model";
 import type { Lookup, Shared } from "./pages";
@@ -42,6 +42,7 @@ function daysBetween(from: string, to: string) {
  * Relative day: "Today", "Tomorrow", "In 5 days", "In 3 weeks", "In 4 months",
  * and the past equivalents ("Yesterday", "12 days ago", "3 months ago").
  */
+const SOON_DAYS = 7;
 function countdown(days: number) {
   if (days === 0) return "Today";
   if (days === 1) return "Tomorrow";
@@ -61,7 +62,17 @@ function countdown(days: number) {
 
 const lower = (s: string) => s[0].toLowerCase() + s.slice(1);
 
-type Entry = { title: Title; event: Release; days: number };
+/**
+ * One row. For a TV season that has premiered and is still airing, `event` is
+ * dated at the next episode (so it sorts and counts down to it) and `airing`
+ * keeps that episode with the season's premiere date.
+ */
+type Entry = {
+  title: Title;
+  event: Release;
+  days: number;
+  airing?: { episode: number; premiered: string };
+};
 /** Releases sharing one date-column label (a day, or a period for "Later"). */
 type Group = { key: string; date?: string; label?: string; items: Entry[] };
 type Month = { key: string; label: string; groups: Group[] };
@@ -136,6 +147,18 @@ function DayLabel({ group, today }: { group: Group; today: string }) {
 }
 
 /**
+ * Channel line: "Season 4 premieres · Prime Video" for a season still to come,
+ * "S4 · Episode 5 · Prime Video" for one airing, else the plain channel.
+ */
+function rowMeta(e: Release, airing: Entry["airing"], today: string) {
+  const where = e.service || "Streaming";
+  if (airing) return `S${e.season} · Episode ${airing.episode} · ${where}`;
+  if (e.season && e.medium === "streaming" && e.date && lastDay(e.date, e.precision) >= today)
+    return `Season ${e.season} premieres · ${where}`;
+  return channel(e);
+}
+
+/**
  * A tracked release (or a title with no date yet) as one row. The title
  * button is stretched over the row, so the row is a single tab stop; the
  * right column shows the countdown instead of a bell (everything here is
@@ -145,16 +168,22 @@ const Row = memo(function Row({
   title: t,
   event: e,
   days,
+  airing,
+  today,
   onSelect,
 }: {
   title: Title;
   event?: Release;
   days?: number;
+  airing?: Entry["airing"];
+  today: string;
   onSelect: (t: Title) => void;
 }) {
-  const when = days === undefined ? undefined : countdown(days);
+  const when = days === undefined ? undefined : countdown(days),
+    // Within a week: the countdown takes the accent, so the nearest stand out.
+    soon = days !== undefined && days >= 0 && days <= SOON_DAYS ? " soon" : "";
   const meta = e
-    ? channel(e)
+    ? rowMeta(e, airing, today)
     : [t.year, t.mediaType === "tv" ? "TV series" : "Movie"]
         .filter(Boolean)
         .join(" · ");
@@ -173,19 +202,29 @@ const Row = memo(function Row({
           {e && <span className={`dot ${e.medium}`} aria-hidden="true" />}
           <span>{meta}</span>
         </div>
-        {/* Mobile shows the countdown here, under the channel line. */}
-        {when && (
-          <span
-            className={`countdown is-inline${days === 0 ? " today" : ""}`}
-            aria-hidden="true"
-          >
-            {when}
-          </span>
+        {/* Mobile shows the countdown here, under the channel line, beside
+            an airing season's premiere date. */}
+        {(when || airing) && (
+          <div className={`follow-sub${airing ? " has-premiere" : ""}`}>
+            {when && (
+              <span
+                className={`countdown is-inline${soon}`}
+                aria-hidden="true"
+              >
+                {when}
+              </span>
+            )}
+            {airing && (
+              <span className="premiered">
+                Premiered {shortDate(airing.premiered)}
+              </span>
+            )}
+          </div>
         )}
       </div>
       {when ? (
         <span
-          className={`countdown${days === 0 ? " today" : ""}`}
+          className={`countdown${soon}`}
           aria-hidden="true"
         >
           {when}
@@ -214,12 +253,14 @@ function Timeline({
           <section key={g.key + i}>
             <DayLabel group={g} today={today} />
             <div className="rows">
-              {g.items.map(({ title, event, days }) => (
+              {g.items.map(({ title, event, days, airing }) => (
                 <Row
                   key={event.id}
                   title={title}
                   event={event}
                   days={days}
+                  airing={airing}
+                  today={today}
                   onSelect={onSelect}
                 />
               ))}
@@ -260,6 +301,17 @@ export function Following({ state, lookup, onSelect }: Shared) {
       )
         continue;
       dated.add(title.id);
+      // A season already airing waits in Upcoming for its next episode.
+      const next = airingEpisode(title, e, today);
+      if (next) {
+        upcoming.push({
+          title,
+          event: { ...e, date: next.date },
+          days: daysBetween(today, next.date),
+          airing: { episode: next.episode, premiered: e.date },
+        });
+        continue;
+      }
       const day = e.precision === "day",
         end = lastDay(e.date, e.precision),
         entry = { title, event: e, days: daysBetween(today, day ? e.date : end) };
@@ -378,6 +430,7 @@ export function Following({ state, lookup, onSelect }: Shared) {
                           key={event.id}
                           title={title}
                           event={event}
+                          today={today}
                           onSelect={onSelect}
                         />
                       ))}
@@ -397,7 +450,7 @@ export function Following({ state, lookup, onSelect }: Shared) {
           </h2>
           <div className="rows follow-undated">
             {view.undated.map((t) => (
-              <Row key={t.id} title={t} onSelect={onSelect} />
+              <Row key={t.id} title={t} today={today} onSelect={onSelect} />
             ))}
           </div>
         </section>

@@ -27,6 +27,8 @@ Add these in Project Settings > Environment Variables for Production, then redep
 | `EMAIL_FROM` | For example `Lineup <reminders@your-verified-domain.com>` |
 | `CRON_SECRET` | A separate long random secret for scheduled requests |
 | `TMDB_TOKEN` | TMDB API Read Access Token: upcoming lists, search, title dates and the twice-daily re-check of followed titles |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Optional phone notifications: a key pair from `npx web-push generate-vapid-keys` (use the same pair as your local `.env` or a new one) |
+| `VAPID_SUBJECT` | Contact for push services, e.g. `mailto:you@example.com` |
 
 Generate SETUP_KEY and CRON_SECRET separately with `openssl rand -hex 32`. Do not share credentials in chat, commit them, or use NEXT_PUBLIC_ prefixes. APP_TOKEN is unnecessary for Vercel. Do not point preview deployments at the production database; give them an isolated database and no production email credentials.
 
@@ -52,6 +54,12 @@ Failed provider requests retry on the next invocation using a stable Resend idem
 The scheduler catches up missed reminder checks for up to seven days after its previous successful check. It does not backfill reminders before a new subscription existed; the initial scheduler run starts from now. Free Supabase projects may pause and all services have quotas: free plans offer no guarantee of timely delivery. Review current limits for Supabase, Vercel and Resend. Check Cron/HTTP and email logs regularly.
 
 Each hourly run first re-checks followed titles against TMDB when the last check is over 12 hours old (page loads trigger the same check), so a changed date becomes a "changed" reminder. Only followed titles are stored and generate reminders. Weekly email digests are not implemented.
+
+## 5. Phone notifications (optional)
+
+With the VAPID variables set, the same hourly job also sends a phone notification for each new reminder (at most once each, only reminders from the last 24 hours, and only to devices that were already subscribed when the reminder was created). Subscriptions are stored as `records` rows of kind `push_subscriptions`; no migration is needed. The job's JSON includes `push` counts (`claimed`, `sent`, `failed`, `removed`), or `"not configured"`. Devices the push service reports gone are removed automatically.
+
+On Android: open the site in Chrome and use **Install app** (if Lineup was installed before the manifest existed, uninstall it and install again so the icon and launch screen update). Open the installed app, go to **Settings > Phone notifications**, tap **Turn on** and allow notifications, then **Send test**. If it says blocked, allow notifications for the site in Android or Chrome site settings and come back. On iPhone (iOS 16.4+), add Lineup to the Home Screen from Safari's Share menu first; push works only from the installed app.
 
 ## Local development and verification
 

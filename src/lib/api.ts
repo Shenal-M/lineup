@@ -1,6 +1,12 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { after } from "next/server";
 import { emailConfigured } from "../email";
+import {
+  pushPublicKey,
+  removePushSubscription,
+  savePushSubscription,
+  sendTestPush,
+} from "../push";
 import { getRuntime } from "./runtime";
 import { clientAddress } from "../auth";
 import { HttpError, ValidationError } from "../model";
@@ -8,6 +14,7 @@ import {
   searchTMDB,
   titleDetails,
   seasonEpisodes,
+  titleTrailer,
   upcoming,
   isTmdbTitle,
 } from "../providers";
@@ -151,7 +158,8 @@ export async function handleApi(request: Request) {
         return send(403, { error: "Cross-origin write rejected" });
     }
     let body: any = {};
-    if (["POST", "PATCH"].includes(req.method || "")) {
+    // DELETE may carry a body too (unsubscribing a push endpoint).
+    if (["POST", "PATCH", "DELETE"].includes(req.method || "")) {
       const raw = await request.text();
       if (Buffer.byteLength(raw) > 65536)
         return send(413, { error: "Request too large" });
@@ -243,11 +251,13 @@ export async function handleApi(request: Request) {
       } catch (e) {
         console.error("Reminder check during state load failed:", describe(e));
       }
-      const data = await store.stateData();
+      // The owner comes with the state, so the app opens with a single request.
+      const [data, user] = await Promise.all([store.stateData(), auth.user()]);
       // Followed titles are re-checked against TMDB when the last check is stale.
       background(() => refreshFollowed(store));
       return send(200, {
         ...data,
+        user,
         settings: data.settings.find((x) => x.id === "user") || null,
         sources: {
           tmdb: !!process.env.TMDB_TOKEN,
@@ -279,6 +289,12 @@ export async function handleApi(request: Request) {
       const season = Number(seasonRoute[2]);
       if (season < 1 || season > 100) throw new ValidationError("Invalid season");
       return send(200, await seasonEpisodes(decode(seasonRoute[1]), season));
+    }
+    // The title's official YouTube trailer ({ key, name } or null), fetched when asked.
+    const trailerRoute = u.pathname.match(/^\/api\/titles\/([^/]+)\/trailer$/);
+    if (trailerRoute && req.method === "GET") {
+      if (!process.env.TMDB_TOKEN) return send(200, null);
+      return send(200, await titleTrailer(decode(trailerRoute[1])));
     }
     // Live TMDB details. The client shows a followed title's stored dates (they carry
     // corrections and drive reminders); viewing one also re-checks it after the response.
@@ -400,6 +416,20 @@ export async function handleApi(request: Request) {
       await store.markNotificationsRead(ids);
       return send(200, { ok: true });
     }
+    // Phone notifications (Web Push). The key is null when VAPID isn't configured.
+    if (u.pathname === "/api/push/key" && req.method === "GET")
+      return send(200, { key: pushPublicKey() });
+    if (u.pathname === "/api/push/subscribe" && req.method === "POST") {
+      if (!pushPublicKey()) throw new ValidationError("Phone notifications are not configured.");
+      await savePushSubscription(store, body, text(req.headers["user-agent"], 300));
+      return send(200, { ok: true });
+    }
+    if (u.pathname === "/api/push/subscribe" && req.method === "DELETE") {
+      await removePushSubscription(store, body.endpoint);
+      return send(200, { ok: true });
+    }
+    if (u.pathname === "/api/push/test" && req.method === "POST")
+      return send(200, await sendTestPush(store));
     return send(404, { error: "Not found" });
   } catch (e: unknown) {
     if (!initialized) {

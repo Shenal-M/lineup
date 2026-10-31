@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { getRuntime } from "../../../../src/lib/runtime";
 import { deliverEmails, emailConfigured } from "../../../../src/email";
+import { deliverPushesSafely } from "../../../../src/push";
 import { refreshFollowed } from "../../../../src/sync";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -23,12 +24,14 @@ export async function GET(request: Request) {
       console.error("Refreshing followed titles failed:", e instanceof Error ? e.message : e),
     );
     await store.tick();
+    // Phone notifications are best effort: failures are logged and counted, never thrown.
+    const push = await deliverPushesSafely(store);
     // Without email configuration the job still keeps the in-app inbox current.
     if (!emailConfigured())
-      return Response.json({ tick: "ok", email: "not configured" }, { headers });
+      return Response.json({ tick: "ok", email: "not configured", push }, { headers });
     const result = await deliverEmails(store);
     return Response.json(
-      { tick: "ok", ...result },
+      { tick: "ok", ...result, push },
       { status: result.failed ? 502 : 200, headers },
     );
   } catch (e) {

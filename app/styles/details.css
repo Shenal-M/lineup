@@ -151,6 +151,71 @@ dialog form > .primary {
   outline: none;
   border-color: var(--ring);
 }
+/* The Trailer control is a button styled as the IMDb pill. */
+.trailer-link {
+  min-height: 0;
+  padding: 0 12px 0 10px;
+  line-height: 1;
+}
+.trailer-link:active:not(:disabled) {
+  transform: none;
+}
+.trailer-link[aria-pressed="true"] {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* Trailer: a 16:9 YouTube player at the top of the body, played on request. */
+.trailer {
+  margin-bottom: 24px;
+  animation: trailer-in 160ms var(--ease-out);
+}
+.trailer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /* Clears the dialog's own close button in the corner. */
+  padding-right: 40px;
+  margin-bottom: 10px;
+}
+.trailer-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--text-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.trailer-close {
+  flex: none;
+  gap: 4px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border-color: var(--border);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.trailer-close:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+}
+.trailer-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--r-control);
+  background: #000;
+}
+.trailer-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
 #season-number {
   width: auto;
   max-width: 100%;
@@ -264,10 +329,21 @@ dialog form > .primary {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.channel-date-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
 .channel-date {
   display: flex;
   align-items: baseline;
   gap: 8px;
+}
+/* An airing season's next episode, under its premiere date. */
+.channel-next {
+  font-size: 12px;
+  color: var(--text-3);
 }
 .date-tba {
   color: var(--text-3);
@@ -434,7 +510,8 @@ dialog form > .primary {
   .add-date:hover:not(:disabled) {
     color: var(--text);
   }
-  .imdb-link:hover {
+  .imdb-link:hover,
+  .trailer-close:hover:not(:disabled) {
     border-color: var(--border-strong);
     color: var(--text);
   }
@@ -452,6 +529,11 @@ dialog form > .primary {
   from {
     opacity: 0;
     transform: translateY(-4px);
+  }
+}
+@keyframes trailer-in {
+  from {
+    opacity: 0;
   }
 }
 @keyframes sheet-in {
@@ -531,6 +613,16 @@ dialog form > .primary {
   .imdb-link {
     height: 36px;
   }
+  .trailer {
+    margin-bottom: 20px;
+  }
+  .trailer-head {
+    padding-right: 36px;
+  }
+  .trailer-close {
+    min-height: 32px;
+    height: 32px;
+  }
   .title-network {
     margin-top: 6px;
   }
@@ -598,7 +690,8 @@ dialog form > .primary {
 
 @media (prefers-reduced-motion: reduce) {
   dialog[open],
-  .detail-more[open] > .more-panel {
+  .detail-more[open] > .more-panel,
+  .trailer {
     animation: none;
   }
   .bell-toggle,

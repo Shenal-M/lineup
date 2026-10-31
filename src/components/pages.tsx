@@ -11,6 +11,7 @@ import {
   type Release,
   type Subscription,
 } from "./types";
+import { dayInZone } from "../model";
 
 /** Lookups derived once per state (built in LineupApp with useMemo). */
 export type Lookup = {
@@ -107,10 +108,6 @@ const sorts: [UpcomingView["sort"], string][] = [
 const addMonths = (d: Date, n: number) =>
   new Date(d.getFullYear(), d.getMonth() + n, 1);
 const monthIndex = (d: Date) => d.getFullYear() * 12 + d.getMonth();
-/** Local calendar day as YYYY-MM-DD (release dates are plain days). */
-function isoDay(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 function scrollBehavior(): ScrollBehavior {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches
     ? "auto"
@@ -316,7 +313,8 @@ export function Upcoming({
   const monthName = monthLabel(month, { month: "long", year: "numeric" }),
     prev = addMonths(month, -1),
     next = addMonths(month, 1),
-    today = isoDay(new Date());
+    // Today in the user's saved time zone (agenda "Today" and episode labels).
+    today = dayInZone(new Date(), state.settings.timezone);
   const noun = tab === "movie" ? "movie" : "TV";
   // Month pager under the list: switch, then bring the top of the list back.
   const top = useRef<HTMLDivElement>(null);
@@ -413,6 +411,7 @@ export function Upcoming({
                 title={titles.get(e.titleId)!}
                 event={e}
                 followed={lookup.followed.has(e.titleId)}
+                today={today}
                 onSelect={onSelect}
               />
             ))}
@@ -427,6 +426,7 @@ export function Upcoming({
                 title={titles.get(e.titleId)!}
                 event={e}
                 followed={lookup.followed.has(e.titleId)}
+                today={today}
                 onSelect={onSelect}
               />
             ))}
@@ -465,6 +465,7 @@ export function Upcoming({
                         title={titles.get(e.titleId)!}
                         event={e}
                         followed={lookup.followed.has(e.titleId)}
+                        today={today}
                         onSelect={onSelect}
                       />
                     ))}

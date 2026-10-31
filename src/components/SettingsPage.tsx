@@ -1,7 +1,8 @@
 "use client";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Heading } from "./ui";
 import { api, countries, type State, type User } from "./types";
+import { disablePush, enablePush, pushState, type PushState } from "./pwa";
 type Props = {
   state: State;
   user: User;
@@ -52,6 +53,100 @@ function when(iso: string) {
         hour: "2-digit",
         minute: "2-digit",
       });
+}
+const pushNotes: Record<PushState, string> = {
+  loading: "Checking this device…",
+  unsupported:
+    "This browser can't show notifications. On iPhone, add Lineup to the Home Screen first.",
+  unconfigured: "Not configured on the server.",
+  blocked: "Blocked for this site. Allow notifications in browser settings, then come back.",
+  off: "Reminders on this device, even when Lineup is closed.",
+  on: "On for this device.",
+};
+// Web Push for this device. Rechecked when the page becomes visible again, e.g. after
+// allowing notifications in system settings.
+function PhoneNotifications({
+  notify,
+  onError,
+}: Pick<Props, "notify" | "onError">) {
+  const [state, setState] = useState<PushState>("loading");
+  const [busy, setBusy] = useState("");
+  useEffect(() => {
+    let live = true;
+    const check = () =>
+      pushState()
+        .then((s) => live && setState(s))
+        .catch(() => live && setState("unsupported"));
+    check();
+    const onVisible = () => document.visibilityState === "visible" && check();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      live = false;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+  async function run(action: string, task: () => Promise<void>) {
+    setBusy(action);
+    try {
+      await task();
+    } catch (error) {
+      onError(error);
+    } finally {
+      setBusy("");
+    }
+  }
+  const turnOn = () =>
+    run("on", async () => {
+      const next = await enablePush();
+      setState(next);
+      if (next === "on") notify("Phone notifications on");
+    });
+  const turnOff = () =>
+    run("off", async () => {
+      setState(await disablePush());
+      notify("Phone notifications off");
+    });
+  const test = () =>
+    run("test", async () => {
+      const { sent } = await api<{ sent: number }>("push/test", "POST", {});
+      notify(sent ? "Test notification sent" : "No devices to notify");
+    });
+  return (
+    <div className="settings-row">
+      <div className="settings-label">
+        <span className="settings-name">Phone notifications</span>
+        <small>{pushNotes[state]}</small>
+      </div>
+      {state === "off" || state === "on" ? (
+        <div className="settings-control push-control">
+          {state === "on" && (
+            <button onClick={test} disabled={!!busy}>
+              {busy === "test" ? "Sending…" : "Send test"}
+            </button>
+          )}
+          {state === "on" ? (
+            <button onClick={turnOff} disabled={!!busy}>
+              {busy === "off" ? "Turning off…" : "Turn off"}
+            </button>
+          ) : (
+            <button className="primary" onClick={turnOn} disabled={!!busy}>
+              {busy === "on" ? "Turning on…" : "Turn on"}
+            </button>
+          )}
+        </div>
+      ) : (
+        state !== "loading" && (
+          <Status tone="off">
+            {state === "blocked"
+              ? "Blocked"
+              : state === "unconfigured"
+                ? "Not connected"
+                : "Not supported"}
+          </Status>
+        )
+      )}
+    </div>
+  );
 }
 export function SettingsPage({
   state,
@@ -269,6 +364,7 @@ export function SettingsPage({
                 </button>
               </div>
             </div>
+            <PhoneNotifications notify={notify} onError={onError} />
             <div className="settings-row settings-row-wrap">
               <div className="settings-label">
                 <span className="settings-name">Password</span>

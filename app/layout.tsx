@@ -7,6 +7,7 @@ import "./styles/details.css";
 import "./styles/search.css";
 import "./styles/following.css";
 import "./styles/account.css";
+import { Pwa } from "../src/components/pwa";
 const sans = Geist({
   subsets: ["latin"],
   variable: "--font-sans",
@@ -17,9 +18,19 @@ const mono = Geist_Mono({
   variable: "--font-mono",
   display: "swap",
 });
+// The web app manifest (app/manifest.ts) and icons (app/icon.svg, app/apple-icon.png)
+// are linked automatically from their file conventions.
 export const metadata: Metadata = {
   title: "Lineup — Your next watch, all lined up",
   description: "Your personal theatrical and streaming release tracker.",
+  applicationName: "Lineup",
+  // iOS home-screen app: full screen, content under a translucent status bar.
+  appleWebApp: {
+    capable: true,
+    title: "Lineup",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: { telephone: false },
 };
 // viewport-fit=cover lets env(safe-area-inset-*) pad the tab bar and bottom sheet on iOS.
 export const viewport: Viewport = {
@@ -27,6 +38,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: "#0a0a0b",
+  colorScheme: "dark",
 };
 export default function RootLayout({
   children,
@@ -36,7 +48,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       {/* Browser extensions (e.g. Grammarly) add attributes to <body> before hydration. */}
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        {children}
+        <Pwa />
+      </body>
     </html>
   );
 }

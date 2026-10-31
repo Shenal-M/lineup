@@ -63,6 +63,39 @@ const kinds: Record<string, string> = {
   release: "Today",
 };
 const emptySearch: SearchMemory = { query: "", searched: "", results: null };
+
+// /api/state also names the signed-in owner, so opening the app is one request.
+type Loaded = State & { user?: User | null };
+// The last loaded state, kept in this browser so a returning visit renders at
+// once and refreshes behind it. Cleared on sign-out and whenever the session
+// turns out to be gone. Storage can be unavailable (private mode): best effort.
+const CACHE_KEY = "lineup:last-state";
+function readCache(): { user: User; state: State } | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+    return saved?.user?.email && saved.state?.settings ? saved : null;
+  } catch {
+    return null;
+  }
+}
+function writeCache(user: User, state: State) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ user, state }));
+  } catch {}
+}
+function clearCache() {
+  try {
+    localStorage.removeItem(CACHE_KEY);
+  } catch {}
+}
+function split({ user, ...state }: Loaded) {
+  return { user: user || null, state: state as State };
+}
+// Started as soon as this module runs in the browser, before React hydrates;
+// the first boot picks it up. A signed-out visitor's 401 is handled there.
+let firstLoad: Promise<Loaded> | null =
+  typeof window === "undefined" ? null : api<Loaded>("state");
+firstLoad?.catch(() => {});
 const defaultView: UpcomingView = { filter: "all", layout: "list", sort: "date" };
 /** The open title; `releases` is undefined while its TMDB dates load. */
 type Active = { title: Title; releases?: Release[] | null };
@@ -135,6 +168,7 @@ export function LineupApp() {
   const selection = useRef(0);
   const lookup = useMemo(() => (state ? buildLookup(state) : null), [state]);
   const reset = useCallback(() => {
+    clearCache();
     setActive(null);
     setInbox(false);
     setState(null);
@@ -151,21 +185,45 @@ export function LineupApp() {
     [reset],
   );
   const refresh = useCallback(async () => {
-    const data = await api<State>("state");
+    const { user: account, state: data } = split(await api<Loaded>("state"));
     setState(data);
+    if (account) writeCache(account, data);
     return data;
   }, []);
+  // Opens from the saved copy when there is one, then from one /api/state
+  // request; only a signed-out visitor needs the auth status (setup or sign-in).
   const boot = useCallback(async () => {
     setError("");
-    try {
-      const auth = await api<AuthStatus>("auth/status");
-      setStatus(auth);
-      setUser(auth.user);
-      if (auth.authenticated) await refresh();
-    } catch (err) {
-      setError(message(err));
+    const cached = readCache();
+    if (cached) {
+      setUser(cached.user);
+      setState(cached.state);
+      setStatus({ ...signedOut, authenticated: true, user: cached.user });
     }
-  }, [refresh]);
+    const pending = firstLoad || api<Loaded>("state");
+    firstLoad = null;
+    try {
+      const { user: account, state: data } = split(await pending);
+      if (!account) throw new ApiError("Sign in to access your Lineup.", 401);
+      setUser(account);
+      setState(data);
+      setStatus({ ...signedOut, authenticated: true, user: account });
+      writeCache(account, data);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        clearCache();
+        setState(null);
+        try {
+          const auth = await api<AuthStatus>("auth/status");
+          setStatus(auth);
+          setUser(auth.user);
+        } catch (e) {
+          setError(message(e));
+        }
+      } else if (cached) notify(message(err));
+      else setError(message(err));
+    }
+  }, []);
   useEffect(() => {
     void boot();
   }, [boot]);

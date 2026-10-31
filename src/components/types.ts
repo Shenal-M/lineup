@@ -18,7 +18,12 @@ export type Title = {
   /** TV: the show's streaming network (else its first network) and TMDB logo. */
   network?: { name: string; logo: string | null } | null;
   seasons?: { number: number; name: string; episodeCount: number }[];
+  /** TV: the next announced and the latest aired episode (null when TMDB has none). */
+  nextEpisode?: Episode | null;
+  lastEpisode?: Episode | null;
 };
+/** A TV episode by season and number; `date` is its original air date (YYYY-MM-DD). */
+export type Episode = { season: number; episode: number; date: string | null; name?: string };
 /** A title with its live TMDB dates in every market (null when TMDB is not connected). */
 export type Detail = { title: Title; releases: Release[] | null };
 export type Season = {

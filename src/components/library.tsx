@@ -1,15 +1,21 @@
 "use client";
 import { useMemo, useState } from "react";
-import { shortDate } from "./ui";
-import { dateLabel, type State, type Title, type Release } from "./types";
+import { airingEpisode, shortDate } from "./ui";
+import { dateLabel, type Episode, type State, type Title, type Release } from "./types";
 import { dayInZone } from "../model";
 import type { Lookup } from "./pages";
 
 /**
  * A followed title with its soonest upcoming dated release, else its latest
- * past one (already out).
+ * past one (already out). A show whose latest season is still airing has its
+ * next episode instead.
  */
-export type Tracked = { title: Title; next?: Release; released?: Release };
+export type Tracked = {
+  title: Title;
+  next?: Release;
+  released?: Release;
+  episode?: Episode & { date: string };
+};
 export type TrackedGroups = { movies: Tracked[]; tv: Tracked[] };
 
 /** Last day (YYYY-MM-DD) a release's date could fall on, given its precision. */
@@ -51,20 +57,23 @@ export function trackedTitles(state: State, lookup: Lookup): TrackedGroups {
       map.set(e.titleId, e);
   }
   // Upcoming first (soonest first), then already out (latest first), then TBA.
-  const rank = (i: Tracked) => (i.next ? 0 : i.released ? 1 : 2);
+  const ahead = (i: Tracked) => i.episode?.date ?? i.next?.date ?? undefined;
+  const rank = (i: Tracked) => (ahead(i) ? 0 : i.released ? 1 : 2);
   const items = state.titles
     .filter((t) => lookup.followed.has(t.id))
-    .map(
-      (t): Tracked => ({
-        title: t,
-        next: next.get(t.id),
-        released: next.has(t.id) ? undefined : released.get(t.id),
-      }),
-    )
+    .map((t): Tracked => {
+      const soon = next.get(t.id),
+        last = released.get(t.id),
+        // An airing season's next episode, unless another release comes first.
+        episode = airingEpisode(t, last, today);
+      if (episode && (!soon || episode.date < soon.date!))
+        return { title: t, episode };
+      return { title: t, next: soon, released: soon ? undefined : last };
+    })
     .sort(
       (a, b) =>
         rank(a) - rank(b) ||
-        (a.next && b.next ? a.next.date!.localeCompare(b.next.date!) : 0) ||
+        (ahead(a) && ahead(b) ? ahead(a)!.localeCompare(ahead(b)!) : 0) ||
         (a.released && b.released
           ? b.released.date!.localeCompare(a.released.date!)
           : 0) ||
@@ -78,9 +87,12 @@ export function trackedTitles(state: State, lookup: Lookup): TrackedGroups {
 
 /**
  * Short date line: "Nov 14", "S2 · Dec 3", "Q1 2027", "Out Oct 13" /
- * "S1 out Oct 7" for releases already past, or "Date TBA".
+ * "S1 out Oct 7" for releases already past, "Next: S4 E5 · Nov 12" for a
+ * season still airing, or "Date TBA".
  */
-export function nextLabel({ next, released }: Omit<Tracked, "title">) {
+export function nextLabel({ next, released, episode }: Omit<Tracked, "title">) {
+  if (episode)
+    return `Next: S${episode.season} E${episode.episode} · ${shortDate(episode.date)}`;
   const e = next || released;
   if (!e) return "Date TBA";
   const date = e.precision === "day" ? shortDate(e.date) : dateLabel(e);
