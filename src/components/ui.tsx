@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
   type SVGProps,
 } from "react";
 import type { Title, Release } from "./types";
@@ -307,6 +308,116 @@ export function Empty({
     </div>
   );
 }
+// iOS sheet curve, for the snap back and the dismiss after a drag.
+const SHEET_EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
+/**
+ * Mobile bottom sheets follow a downward drag that starts on content scrolled
+ * to the top (or anywhere that doesn't scroll), and close on a quick flick or
+ * a pull past a quarter of their height; otherwise they spring back. Touch
+ * events rather than pointer events, so the drag can stop the page from
+ * bouncing (touchmove is cancelable). Desktop dialogs are left alone.
+ */
+function useSheetDrag(
+  ref: RefObject<HTMLDialogElement | null>,
+  onClose: () => void,
+) {
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  });
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const dialog: HTMLDialogElement = node;
+    const sheet = window.matchMedia("(max-width: 760px)"),
+      calm = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let from: { x: number; y: number; scroller: Element | null } | null = null,
+      dragging = false,
+      dy = 0,
+      // Recent positions, for the release velocity.
+      samples: { y: number; t: number }[] = [];
+    const scrollerOf = (el: Element | null) => {
+      for (; el && el !== dialog.parentElement; el = el.parentElement)
+        if (
+          el.scrollHeight > el.clientHeight + 1 &&
+          /auto|scroll/.test(getComputedStyle(el).overflowY)
+        )
+          return el;
+      return null;
+    };
+    const settle = (y: number, ms: number, done?: () => void) => {
+      const finish = () => {
+        dialog.style.transition = "";
+        dialog.style.transform = "";
+        done?.();
+      };
+      if (calm.matches) return finish();
+      dialog.style.transition = `transform ${ms}ms ${SHEET_EASE}`;
+      dialog.style.transform = `translateY(${y}px)`;
+      // Closing unmounts the sheet, so finish on a timer, not transitionend.
+      setTimeout(done ? () => done() : finish, ms);
+    };
+    function start(e: TouchEvent) {
+      const target = e.target as Element;
+      if (!sheet.matches || e.touches.length !== 1 || target.closest("input, textarea, select"))
+        return;
+      const t = e.touches[0];
+      from = { x: t.clientX, y: t.clientY, scroller: scrollerOf(target) };
+      dragging = false;
+      dy = 0;
+      samples = [];
+    }
+    function move(e: TouchEvent) {
+      if (!from) return;
+      const t = e.touches[0],
+        dx = t.clientX - from.x;
+      dy = t.clientY - from.y;
+      if (!dragging) {
+        // Scrolling content, upward or sideways moves: not a sheet drag.
+        if ((from.scroller?.scrollTop ?? 0) > 0 || dy < 0 || Math.abs(dx) > Math.abs(dy)) {
+          if (Math.hypot(dx, dy) > 6) from = null;
+          return;
+        }
+        if (e.cancelable) e.preventDefault();
+        if (dy < 6) return;
+        dragging = true;
+        from.y = t.clientY;
+        dy = 0;
+        dialog.style.transition = "none";
+      }
+      if (e.cancelable) e.preventDefault();
+      const now = e.timeStamp;
+      samples = [...samples.filter((s) => now - s.t < 100), { y: t.clientY, t: now }];
+      // Past the top edge the sheet resists instead of stopping dead.
+      const y = dy >= 0 ? dy : -Math.min(16, Math.sqrt(-dy) * 2);
+      dialog.style.transform = `translateY(${y}px)`;
+    }
+    function end() {
+      if (!from) return;
+      from = null;
+      if (!dragging) return;
+      dragging = false;
+      const first = samples[0],
+        last = samples[samples.length - 1],
+        velocity =
+          first && last && last.t > first.t ? (last.y - first.y) / (last.t - first.t) : 0;
+      const height = dialog.offsetHeight;
+      if (dy > height * 0.25 || velocity > 0.4)
+        settle(height, 200, () => close.current());
+      else settle(0, 320);
+    }
+    dialog.addEventListener("touchstart", start, { passive: true });
+    dialog.addEventListener("touchmove", move, { passive: false });
+    dialog.addEventListener("touchend", end);
+    dialog.addEventListener("touchcancel", end);
+    return () => {
+      dialog.removeEventListener("touchstart", start);
+      dialog.removeEventListener("touchmove", move);
+      dialog.removeEventListener("touchend", end);
+      dialog.removeEventListener("touchcancel", end);
+    };
+  }, [ref]);
+}
 export function Modal({
   children,
   onClose,
@@ -319,6 +430,7 @@ export function Modal({
   label: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  useSheetDrag(ref, onClose);
   useEffect(() => {
     const dialog = ref.current;
     if (dialog && !dialog.open) dialog.showModal();

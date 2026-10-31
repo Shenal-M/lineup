@@ -499,6 +499,12 @@ button.poster {
   > :nth-child(5) {
   --i: 4;
 }
+/* After a page change the view itself animates in; rows don't cascade too. */
+#content:not([data-dir="none"])
+  :is(.releases.stagger > .agenda, .releases.stagger > .cards, .releases.stagger > .rows, .rows.stagger)
+  > * {
+  animation: none;
+}
 @keyframes row-in {
   from {
     opacity: 0;

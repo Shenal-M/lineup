@@ -110,6 +110,13 @@ function Toast() {
 
 export function LineupApp() {
   const page = pages[usePathname()] || "movies";
+  // Direction of the last page change in tab order ("none" on first load), so
+  // the incoming view shifts in from the side of the tab that was tapped.
+  const [view, setView] = useState({ page, dir: "none" });
+  if (view.page !== page) {
+    const order = (p: Page) => nav.findIndex(([id]) => id === p);
+    setView({ page, dir: order(page) > order(view.page) ? "forward" : "back" });
+  }
   const [status, setStatus] = useState<AuthStatus | null>(null),
     [state, setState] = useState<State | null>(null),
     [user, setUser] = useState<User | null>(null);
@@ -334,7 +341,7 @@ export function LineupApp() {
               </button>
             </div>
           </header>
-          <div id="content" key={page}>
+          <div id="content" key={page} data-dir={view.dir}>
             {page === "movies" || page === "tv" ? (
               <Upcoming
                 kind={page === "tv" ? "tv" : "movie"}

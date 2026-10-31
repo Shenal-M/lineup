@@ -382,6 +382,29 @@ dialog[open]::backdrop {
 #content {
   animation: view-in 160ms var(--ease-out);
 }
+/* Mobile tab switches: a short fade with an 8px shift from the side of the
+   tapped tab (tab order), so the motion says where you went. No exit motion:
+   the old view is simply replaced. */
+@keyframes view-forward {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+@keyframes view-back {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+@media (max-width: 760px) {
+  #content[data-dir="forward"] {
+    animation: view-forward 180ms var(--ease-out);
+  }
+  #content[data-dir="back"] {
+    animation: view-back 180ms var(--ease-out);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
