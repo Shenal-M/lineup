@@ -517,18 +517,24 @@ button.sheet-item:active:not(:disabled) {
   }
   aside nav a {
     flex: 1;
-    flex-direction: column;
     justify-content: center;
-    gap: 4px;
     height: 56px;
     padding: 0;
     border-radius: 0;
     color: var(--text-3);
-    font-size: 11px;
+  }
+  /* Icons only; the name stays for screen readers. */
+  aside nav a > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   aside nav a .icon {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
   }
   aside nav a.active {
     background: transparent;
@@ -553,6 +559,16 @@ button.sheet-item:active:not(:disabled) {
   }
   #toast {
     bottom: calc(57px + 12px + env(safe-area-inset-bottom));
+  }
+}
+/* The installed app: Android paints the gesture-bar strip below the page in the
+   manifest's theme colour (--bg). A solid bar in that same colour reads as one
+   surface down to the screen edge; see-through, it stopped at its own edge. */
+@media (max-width: 760px) and (display-mode: standalone) {
+  aside nav {
+    background: var(--bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }
 

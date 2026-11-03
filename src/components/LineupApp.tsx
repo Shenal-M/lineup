@@ -12,7 +12,7 @@ import {
 import { AuthPanel } from "./AuthPanel";
 import { Brand, Bell, Modal, Empty, Icon, shortDate } from "./ui";
 import { Upcoming, buildLookup, type UpcomingView } from "./pages";
-import { SearchPage, type SearchMemory } from "./search";
+import { SearchPage, primeKeyboard, type SearchMemory } from "./search";
 import { Following } from "./following";
 import { Library } from "./library";
 import { SettingsPage } from "./SettingsPage";
@@ -320,6 +320,7 @@ export function LineupApp() {
         (page === id ? "active" : "")
       }
       aria-current={page === id ? "page" : undefined}
+      onClick={id === "search" && page !== id ? primeKeyboard : undefined}
     >
       <Icon name={icon} />
       <span>{label}</span>

@@ -13,6 +13,24 @@ import { Bell, Empty, Heading, Icon, Poster, channel } from "./ui";
 import { api, dateLabel, type Release, type Title } from "./types";
 import { ConnectNotice, type Shared } from "./pages";
 
+/**
+ * iOS only raises the keyboard for a focus made during the tap itself, and the
+ * search field mounts after the tab switch. Focusing a stand-in field on the tap
+ * raises it; the real field takes focus (and the keyboard) once it mounts.
+ */
+export function primeKeyboard() {
+  if (!matchMedia("(hover: none)").matches) return;
+  const proxy = document.createElement("input");
+  proxy.setAttribute("aria-hidden", "true");
+  proxy.tabIndex = -1;
+  // 16px: no focus zoom.
+  proxy.style.cssText =
+    "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px;border:0;padding:0";
+  document.body.append(proxy);
+  proxy.focus({ preventScroll: true });
+  setTimeout(() => proxy.remove(), 1000);
+}
+
 /** Last submitted search, kept in LineupApp so it survives view switches. */
 export type SearchMemory = {
   query: string;
@@ -82,8 +100,16 @@ export function SearchPage({
     // Last suggestion list that arrived; shown while the next one loads so
     // the dropdown doesn't flicker or jump between keystrokes.
     [shown, setShown] = useState<Title[] | null>(null);
-  const picked = useRef(false);
+  const picked = useRef(false),
+    input = useRef<HTMLInputElement>(null);
   const { results, searched } = memory;
+  // Opening the tab is opening search: focus the field so the keyboard comes up.
+  // The suggestion list waits for typing, so returning to earlier results
+  // doesn't cover them.
+  useEffect(() => {
+    picked.current = true;
+    input.current?.focus({ preventScroll: true });
+  }, []);
   const id = useId(),
     listId = id + "-suggestions",
     optionId = (i: number) => `${id}-option-${i}`;
@@ -199,6 +225,7 @@ export function SearchPage({
         <span className={`search-field${loading || busy ? " loading" : ""}`}>
           <Icon name="search" />
           <input
+            ref={input}
             className="search-input"
             type="search"
             role="combobox"

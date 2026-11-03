@@ -791,6 +791,14 @@ dialog .empty {
     height: 40px;
     min-height: 40px;
   }
+  /* On phones a followed title is just the lime bell: no tinted box. */
+  .follow-btn.on {
+    background: transparent;
+  }
+  .follow-btn svg {
+    width: 17px;
+    height: 17px;
+  }
   .title-row .follow-btn {
     margin-right: -4px;
   }

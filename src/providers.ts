@@ -286,10 +286,11 @@ export async function titleTrailer(id: string): Promise<{ key: string; name: str
   if (!m) throw new HttpError("Title not found", 404);
   if (m[1] === "movie") return pickTrailer((await tmdb(`/movie/${m[2]}/videos`)).results);
   // A show without a season 1 answers 404; fall back to the show's videos then too.
+  // Both are asked at once so the fallback costs no extra round trip.
+  const all = tmdb(`/tv/${m[2]}/videos`);
+  all.catch(() => {});
   const first = await tmdb(`/tv/${m[2]}/season/1/videos`).catch(() => null);
-  return (
-    pickTrailer(first?.results) || pickTrailer((await tmdb(`/tv/${m[2]}/videos`)).results)
-  );
+  return pickTrailer(first?.results) || pickTrailer((await all).results);
 }
 export async function seasonEpisodes(id: string, number: number) {
   const m = id.match(TITLE_ID);

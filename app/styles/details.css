@@ -164,10 +164,28 @@ dialog form > .primary {
   border-color: var(--border-strong);
   color: var(--text);
 }
+/* Tapped before the lookup answered: the icon breathes until it plays. */
+.trailer-link.is-waiting svg {
+  animation: trailer-wait 900ms ease-in-out infinite alternate;
+}
+@keyframes trailer-wait {
+  to {
+    opacity: 0.35;
+  }
+}
+/* No trailer: the button stays where it was, quietly unavailable. */
+.trailer-link:disabled {
+  opacity: 1;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-3);
+  cursor: default;
+}
 
-/* Trailer: a 16:9 YouTube player at the top of the body, played on request. */
+/* Trailer: a 16:9 YouTube player at the top of the body, played on request.
+   It starts below the dialog's close button; its own Close sits underneath. */
 .trailer {
-  margin-bottom: 24px;
+  margin: 20px 0 24px;
   animation: trailer-in 160ms var(--ease-out);
 }
 .trailer-head {
@@ -175,9 +193,7 @@ dialog form > .primary {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  /* Clears the dialog's own close button in the corner. */
-  padding-right: 40px;
-  margin-bottom: 10px;
+  margin-top: 10px;
 }
 .trailer-name {
   min-width: 0;
@@ -510,7 +526,7 @@ dialog form > .primary {
   .add-date:hover:not(:disabled) {
     color: var(--text);
   }
-  .imdb-link:hover,
+  .imdb-link:hover:not(:disabled),
   .trailer-close:hover:not(:disabled) {
     border-color: var(--border-strong);
     color: var(--text);
@@ -586,15 +602,21 @@ dialog form > .primary {
   .title-body {
     padding: 28px 16px calc(24px + env(safe-area-inset-bottom, 0px));
   }
-  .detail-close,
   .dialog-top .icon-button {
     width: 40px;
     height: 40px;
     min-height: 40px;
   }
+  /* The sheet closes by swiping down, tapping outside or going back, so its
+     X is only kept for screen readers. */
   .detail-close {
-    top: 10px;
-    right: 4px;
+    width: 1px;
+    height: 1px;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    border: 0;
   }
   .dialog-top .icon-button {
     margin-right: -8px;
@@ -614,14 +636,11 @@ dialog form > .primary {
     height: 36px;
   }
   .trailer {
-    margin-bottom: 20px;
-  }
-  .trailer-head {
-    padding-right: 36px;
+    margin: 0 0 20px;
   }
   .trailer-close {
-    min-height: 32px;
-    height: 32px;
+    min-height: 36px;
+    height: 36px;
   }
   .title-network {
     margin-top: 6px;
@@ -647,7 +666,7 @@ dialog form > .primary {
     grid-column: 2;
   }
   .title-head {
-    padding-right: 28px;
+    padding-right: 0;
   }
   .title-description,
   .synopsis-toggle {

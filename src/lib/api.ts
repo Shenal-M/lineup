@@ -294,7 +294,10 @@ export async function handleApi(request: Request) {
     const trailerRoute = u.pathname.match(/^\/api\/titles\/([^/]+)\/trailer$/);
     if (trailerRoute && req.method === "GET") {
       if (!process.env.TMDB_TOKEN) return send(200, null);
-      return send(200, await titleTrailer(decode(trailerRoute[1])));
+      const found = await titleTrailer(decode(trailerRoute[1]));
+      // Trailers rarely change: this browser reuses the answer for a day.
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      return send(200, found);
     }
     // Live TMDB details. The client shows a followed title's stored dates (they carry
     // corrections and drive reminders); viewing one also re-checks it after the response.

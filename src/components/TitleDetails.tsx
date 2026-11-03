@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ExternalLink, Play, Plus, X } from "lucide-react";
+import { ExternalLink, Play, Plus, VideoOff, X } from "lucide-react";
 import { Bell, Icon, Modal, Poster, airingEpisode, channel, shortDate } from "./ui";
 import {
   api,
@@ -17,6 +17,25 @@ import {
 } from "./types";
 import { dayInZone, type Medium } from "../model";
 type Trailer = { key: string; name: string };
+// Trailers looked up this session, by title: reopening a title knows at once.
+// Plain fetch rather than api() (which skips the HTTP cache): the server lets the
+// browser keep each answer for a day, so it also survives reloads.
+const trailers = new Map<string, Promise<Trailer | null>>();
+function lookupTrailer(id: string) {
+  let found = trailers.get(id);
+  if (!found) {
+    found = fetch(`/api/titles/${encodeURIComponent(id)}/trailer`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Trailer lookup failed");
+        return res.json() as Promise<Trailer | null>;
+      })
+      .then((v) => (v?.key ? v : null));
+    // A failed lookup isn't remembered, so the next open tries again.
+    found.catch(() => trailers.delete(id));
+    trailers.set(id, found);
+  }
+  return found;
+}
 type Props = {
   title: Title;
   /** Live TMDB dates for every market; undefined while loading. */
@@ -68,6 +87,7 @@ export function TitleDetails({
   // A followed title shows its stored dates (corrections, what reminders use);
   // any other title shows TMDB's live dates.
   const market = state.settings.market,
+    tmdb = state.sources.tmdb,
     stored = state.titles.some((x) => x.id === t.id),
     loading = !stored && releases === undefined,
     events = (stored ? state.releases : releases || []).filter(
@@ -80,31 +100,37 @@ export function TitleDetails({
     subscriptions[0]?.rules || defaultRules,
   );
   useEffect(() => setExpanded(false), [t.id]);
-  // Look the trailer up once the dialog opens; nothing plays until asked. A failed
-  // lookup just hides the button.
+  // Look the trailer up once the dialog opens; nothing plays until asked. The
+  // Trailer button is there from the start: a tap before the lookup answers
+  // plays as soon as it does, and a title without one (or a failed lookup)
+  // turns the button into a disabled "No trailer".
   useEffect(() => {
     let live = true;
     setTrailer(undefined);
     setPlaying(false);
-    api<Trailer | null>(`titles/${encodeURIComponent(t.id)}/trailer`)
-      .then((v) => live && setTrailer(v?.key ? v : null))
+    lookupTrailer(t.id)
+      .then((v) => live && setTrailer(v))
       .catch(() => live && setTrailer(null));
     return () => {
       live = false;
     };
   }, [t.id]);
+  useEffect(() => {
+    if (trailer === null) setPlaying(false);
+  }, [trailer]);
   // Focus follows the player: its close button when it opens, the Trailer
   // button when it closes.
-  const wasPlaying = useRef(false);
+  const showing = playing && !!trailer,
+    wasShowing = useRef(false);
   useEffect(() => {
-    if (playing) {
+    if (showing) {
       trailerClose.current?.focus({ preventScroll: true });
       trailerClose.current
         ?.closest(".trailer")
         ?.scrollIntoView({ block: "nearest" });
-    } else if (wasPlaying.current) trailerButton.current?.focus();
-    wasPlaying.current = playing;
-  }, [playing]);
+    } else if (wasShowing.current) trailerButton.current?.focus();
+    wasShowing.current = showing;
+  }, [showing]);
   // Fresh subscriptions supersede optimistic bells kept after a failed refetch.
   useEffect(() => setPending({}), [state.subscriptions]);
   // Measure after the dialog opens (and on resize): only offer "More" when the
@@ -416,8 +442,18 @@ export function TitleDetails({
         <Icon name="close" />
       </button>
       <div className="title-body">
-        {playing && trailer && (
+        {showing && (
           <section className="trailer" aria-label={`${t.name} trailer`}>
+            <div className="trailer-frame">
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(trailer.key)}?autoplay=1&rel=0&playsinline=1`}
+                title={trailer.name}
+                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                allowFullScreen
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+            </div>
+            {/* Below the video, clear of the dialog's own close button. */}
             <div className="trailer-head">
               <span className="trailer-name">{trailer.name}</span>
               <button
@@ -430,15 +466,6 @@ export function TitleDetails({
                 <X size={14} strokeWidth={1.75} aria-hidden="true" />
                 Close
               </button>
-            </div>
-            <div className="trailer-frame">
-              <iframe
-                src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(trailer.key)}?autoplay=1&rel=0&playsinline=1`}
-                title={trailer.name}
-                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-                allowFullScreen
-                referrerPolicy="strict-origin-when-cross-origin"
-              />
             </div>
           </section>
         )}
@@ -469,7 +496,7 @@ export function TitleDetails({
             {meta.length > 0 && (
               <p className="title-meta">{meta.join(" · ")}</p>
             )}
-            {(!!t.seasons?.length || t.imdbId || trailer) && (
+            {(!!t.seasons?.length || t.imdbId || tmdb) && (
               <div className="title-actions">
                 {!!t.seasons?.length && (
                   <div className="season-pick">
@@ -511,16 +538,24 @@ export function TitleDetails({
                     />
                   </a>
                 )}
-                {trailer && (
+                {tmdb && (
                   <button
                     type="button"
                     ref={trailerButton}
-                    className="imdb-link trailer-link"
-                    aria-pressed={playing}
+                    className={`imdb-link trailer-link${
+                      playing && trailer === undefined ? " is-waiting" : ""
+                    }`}
+                    disabled={trailer === null}
+                    aria-pressed={trailer === null ? undefined : playing}
+                    aria-busy={playing && trailer === undefined}
                     onClick={() => setPlaying((v) => !v)}
                   >
-                    <Play size={12} strokeWidth={1.75} aria-hidden="true" />
-                    Trailer
+                    {trailer === null ? (
+                      <VideoOff size={12} strokeWidth={1.75} aria-hidden="true" />
+                    ) : (
+                      <Play size={12} strokeWidth={1.75} aria-hidden="true" />
+                    )}
+                    {trailer === null ? "No trailer" : "Trailer"}
                   </button>
                 )}
               </div>
