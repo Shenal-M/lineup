@@ -70,130 +70,87 @@
   padding-left: 72px;
 }
 
-/* Released: quieter text and dimmer posters, full strength on hover/focus. */
-.follow-past .card-name,
-.follow-past .dom {
-  color: var(--text-2);
-}
-.follow-past .poster {
-  opacity: 0.6;
-  transition: opacity 120ms var(--ease-out);
-}
-.follow-past .title-row:has(.card-name:focus-visible) .poster {
-  opacity: 1;
-}
-.follow-more {
-  min-height: 40px;
-  margin: 8px 0 0 72px;
-  font-size: 13px;
-  color: var(--text-2);
-  text-decoration: underline;
-  text-decoration-color: var(--border-strong);
-  text-underline-offset: 3px;
-  transition:
-    color 120ms var(--ease-out),
-    text-decoration-color 120ms var(--ease-out);
-}
 .follow-none {
+  padding: 8px 0;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--text-3);
 }
 
-/* Released sits above the heading, newest nearest to it; a rule marks today. */
-.follow-past-wrap {
-  margin-bottom: 28px;
-  padding-bottom: 28px;
-  border-bottom: 1px solid var(--border);
-}
-.follow-past-head {
+/* Tab bar (Upcoming / Out now / Watched) with the kind filter beside it;
+   it sticks under the header so every list is one tap away. */
+.follow-bar {
+  position: sticky;
+  top: var(--header);
+  z-index: 5;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
-.follow-watched {
-  display: inline-flex;
-  align-items: baseline;
+.follow-tabs {
+  display: flex;
+  gap: 28px;
+}
+.follow-tabs button {
+  position: relative;
   gap: 6px;
-  min-height: 32px;
-  font-size: 13px;
-  color: var(--text-2);
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-3);
+  transition: color 120ms var(--ease-out);
 }
-.follow-watched span,
-.follow-reveal span {
+.follow-tabs button span {
   font: 12px var(--mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-3);
 }
-.follow-more.is-earlier {
-  margin: 0 0 8px 72px;
-}
-/* Tall enough that the page can always open on the heading. */
-.follow-now.has-past {
-  min-height: calc(100vh - var(--header));
-}
-.follow-now .page-heading {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 12px;
-  align-items: center;
-}
-.follow-now .page-heading p {
-  grid-column: 1 / -1;
-}
-/* "↑ Released 6": the way up to the past, beside the title. */
-.follow-reveal {
-  grid-column: 2;
-  grid-row: 1;
-  gap: 6px;
-  height: 32px;
-  min-height: 32px;
-  padding: 0 12px 0 10px;
-  border-color: var(--border);
-  border-radius: 999px;
-  background: transparent;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-2);
-}
-.follow-reveal svg {
-  color: var(--text-3);
-}
-/* "↓ Upcoming": floats in while you're up in the past. */
-.follow-to-now {
-  position: fixed;
-  bottom: 24px;
-  left: calc(var(--sidebar) + (100% - var(--sidebar)) / 2);
-  z-index: 14;
-  gap: 6px;
-  height: 36px;
-  min-height: 36px;
-  padding: 0 16px 0 12px;
-  border-color: var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface-2);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  font-size: 13px;
-  font-weight: 500;
+.follow-tabs button.active {
   color: var(--text);
+}
+.follow-tabs button::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text);
   opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translate(-50%, 8px);
+  transform: scaleX(0.6);
   transition:
-    opacity 180ms var(--ease-out),
-    transform 180ms var(--ease-out),
-    visibility 0s linear 180ms;
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
 }
-.follow-to-now.is-shown {
+.follow-tabs button.active::after {
   opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transform: translate(-50%, 0);
-  transition:
-    opacity 180ms var(--ease-out),
-    transform 180ms var(--ease-out);
+  transform: none;
 }
+.follow-bar .filters button {
+  height: 26px;
+  min-height: 26px;
+}
+/* Day labels stick below the bar, not under it. */
+.follow-panel .day {
+  top: calc(var(--header) + 48px + 12px);
+}
+.follow-panel {
+  animation: follow-panel-in 160ms var(--ease-out);
+}
+@keyframes follow-panel-in {
+  from {
+    opacity: 0;
+  }
+}
+
 /* Released rows: the countdown moves under the title; the right column is the
    watched check. */
 .follow-row.is-past .follow-sub {
@@ -220,40 +177,36 @@
 .watch-btn:active:not(:disabled) {
   transform: scale(0.92);
 }
-/* Watched sheet: a row opens the title; the arrow puts it back on Following. */
-.watched-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.watch-btn {
+  transition:
+    color 120ms var(--ease-out),
+    transform 120ms var(--ease-out);
 }
-.watched-item .sheet-item {
-  flex: 1;
-  min-width: 0;
+/* Ticked: the check turns lime (or, unticking in Watched, grey) and the row
+   dims for a moment before it moves to the other list. */
+.watch-btn.is-on,
+.follow-row.is-leaving .watch-btn {
+  color: var(--accent);
 }
-.watched-restore {
-  flex: none;
-  margin-right: 4px;
+.follow-row.is-watched.is-leaving .watch-btn {
   color: var(--text-3);
+}
+.follow-row > :not(.watch-btn) {
+  transition: opacity 240ms var(--ease-out);
+}
+.follow-row.is-leaving > :not(.watch-btn) {
+  opacity: 0.4;
 }
 
 @media (hover: hover) {
-  .follow-reveal:hover:not(:disabled),
-  .follow-watched:hover:not(:disabled) {
-    color: var(--text);
-  }
-  .follow-reveal:hover:not(:disabled) {
-    border-color: var(--border-strong);
-  }
-  .watch-btn:hover:not(:disabled),
-  .watched-restore:hover:not(:disabled) {
+  .watch-btn:hover:not(:disabled) {
     color: var(--accent);
   }
-  .follow-past .title-row:hover .poster {
-    opacity: 1;
+  .watch-btn.is-on:hover:not(:disabled) {
+    color: var(--text-2);
   }
-  .follow-more:hover:not(:disabled) {
-    color: var(--text);
-    text-decoration-color: var(--text-3);
+  .follow-tabs button:hover:not(.active) {
+    color: var(--text-2);
   }
 }
 
@@ -265,34 +218,34 @@
   .follow-undated {
     padding-left: 52px;
   }
-  .follow-more {
-    min-height: 44px;
-    margin-left: 52px;
+  /* Phones: only the tabs stick (full width, equal thirds); the kind chips
+     sit below them and scroll away. */
+  .follow-bar {
+    display: contents;
   }
-  .follow-more.is-earlier {
-    margin: 0 0 4px 52px;
+  .follow-tabs {
+    position: sticky;
+    top: calc(var(--header) + env(safe-area-inset-top));
+    z-index: 5;
+    gap: 0;
+    margin: 0 calc(-1 * var(--pad)) 16px;
+    padding: 0 var(--pad);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
   }
-  .follow-past-wrap {
-    margin-bottom: 20px;
-    padding-bottom: 20px;
+  .follow-tabs button {
+    flex: 1;
+    justify-content: center;
   }
-  .follow-watched {
-    min-height: 44px;
+  .follow-bar .filters {
+    margin-bottom: 16px;
   }
-  .follow-now.has-past {
-    min-height: calc(
-      100dvh - var(--header) - env(safe-area-inset-top) - 57px - env(safe-area-inset-bottom)
-    );
+  .follow-bar .filters button {
+    height: 34px;
+    min-height: 34px;
   }
-  .follow-reveal {
-    height: 36px;
-    min-height: 36px;
-  }
-  .follow-to-now {
-    bottom: calc(57px + 16px + env(safe-area-inset-bottom));
-    left: 50%;
-    height: 40px;
-    min-height: 40px;
+  .follow-panel .day {
+    top: calc(var(--header) + env(safe-area-inset-top) + 48px + 8px);
   }
   .watch-btn {
     width: 40px;
@@ -356,10 +309,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .follow-past .poster,
-  .follow-more,
-  .follow-to-now {
+  .follow-row > *,
+  .watch-btn,
+  .follow-tabs button,
+  .follow-tabs button::after {
     transition: none;
+  }
+  .follow-panel {
+    animation: none;
   }
   .watch-btn:active:not(:disabled) {
     transform: none;

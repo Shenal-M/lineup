@@ -1,5 +1,15 @@
 /* Dialogs and the title details popup. */
 /* ---------- Dialogs ---------- */
+/* Phones and touch screens: while a sheet or dialog is open the page behind it
+   stays put. Swipes on the backdrop, or past the end of a sheet's own scroll,
+   would otherwise scroll the page. Keeping the scroll position (rather than
+   fixing the body) leaves sticky bars exactly where they were. */
+@media (max-width: 760px), (hover: none) {
+  html:has(dialog[open]) {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+}
 dialog {
   width: min(520px, calc(100% - 32px));
   max-height: min(85vh, 820px);
