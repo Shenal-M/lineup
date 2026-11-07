@@ -422,6 +422,16 @@ export async function handleApi(request: Request) {
     // Phone notifications (Web Push). The key is null when VAPID isn't configured.
     if (u.pathname === "/api/push/key" && req.method === "GET")
       return send(200, { key: pushPublicKey() });
+    // Watched marks: POST adds, DELETE removes. { titleId, season? } (a season for TV).
+    if (u.pathname === "/api/watched" && (req.method === "POST" || req.method === "DELETE")) {
+      const titleId = text(body.titleId, 200);
+      const season = body.season === undefined || body.season === null ? undefined : body.season;
+      if (!titleId || (season !== undefined && !(Number.isInteger(season) && season > 0 && season < 1000)))
+        throw new ValidationError("Invalid watched title");
+      const id = season ? `${titleId}:s${season}` : titleId;
+      await store.setWatched({ id, titleId, ...(season ? { season } : {}) }, req.method === "POST");
+      return send(200, { ok: true });
+    }
     if (u.pathname === "/api/push/subscribe" && req.method === "POST") {
       if (!pushPublicKey()) throw new ValidationError("Phone notifications are not configured.");
       await savePushSubscription(store, body, text(req.headers["user-agent"], 300));

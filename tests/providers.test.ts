@@ -51,9 +51,37 @@ test("movie dates are regional: earliest wide (else limited) cinema date and ear
       ["tmdb-movie-7-US-digital", "digital", null, "2026-10-13"],
       ["tmdb-movie-7-GB-theatrical", "theatrical", null, "2026-10-09"],
       ["tmdb-movie-7-GB-digital", "digital", "Netflix", "2026-11-03"],
+      // LK has no digital date of its own: it borrows the earliest one (US).
+      ["tmdb-movie-7-LK-digital", "digital", null, "2026-10-13"],
     ],
   );
   assert.equal(releases[0].source, "TMDB · limited theatrical");
+  assert.equal(releases[1].country, undefined);
+  assert.equal(releases[4].country, "US");
+  assert.equal(releases[4].source, "TMDB · digital (US)");
+});
+
+test("a market without a digital date borrows the earliest one, until it has its own", () => {
+  const digital = (country: string, date: string, note = "") => ({
+    iso_3166_1: country,
+    release_dates: [{ type: 4, release_date: `${date}T00:00:00.000Z`, note }],
+  });
+  const us = (results: any[]) =>
+    movieReleases({ id: 1, release_dates: { results } }).find((e) => e.id === "tmdb-movie-1-US-digital");
+  // Only abroad: the earliest foreign date, labelled with its country.
+  const borrowed = us([digital("GB", "2026-11-16"), digital("DE", "2026-11-20")]);
+  assert.equal(borrowed?.date, "2026-11-16");
+  assert.equal(borrowed?.country, "GB");
+  // A sooner date announced elsewhere takes over on the next refresh.
+  const sooner = us([digital("GB", "2026-11-16"), digital("FR", "2026-11-05", "Netflix")]);
+  assert.deepEqual([sooner?.date, sooner?.country, sooner?.service], ["2026-11-05", "FR", "Netflix"]);
+  assert.equal(sooner?.source, "TMDB · digital (Netflix, FR)");
+  // The market's own date always wins, even when a foreign one is earlier.
+  const own = us([digital("FR", "2026-11-05"), digital("US", "2026-11-25")]);
+  assert.equal(own?.date, "2026-11-25");
+  assert.equal(own?.country, undefined);
+  // No digital date anywhere: nothing to borrow.
+  assert.equal(us([{ iso_3166_1: "US", release_dates: [{ type: 3, release_date: "2026-11-01T00:00:00.000Z" }] }]), undefined);
 });
 
 test("TV dates are season premieres on a streaming network", () => {

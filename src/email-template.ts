@@ -2,6 +2,7 @@
 // dark to match the app, plus a plain-text part. No SVG or web fonts: Gmail drops both,
 // so the logo goes as an inline PNG attachment referenced by its content id.
 import { EMAIL_LOGO_PNG } from "./email-logo.ts";
+import { countryName } from "./model.ts";
 
 const LOGO_CID = "lineup-logo";
 const C = {
@@ -42,7 +43,7 @@ export type ReminderInput = {
     poster?: string | null;
   } | null;
   /** The release, when known: adds the season and the date's precision. */
-  release?: { season?: number; precision?: string } | null;
+  release?: { season?: number; precision?: string; country?: string } | null;
   /** Public app URL for the "Open Lineup" button; the button is left out without it. */
   appUrl?: string;
   /** Logo image source; defaults to the inline attachment (override for previews). */
@@ -74,7 +75,8 @@ export function when(date: string | null | undefined, precision = "day", short =
     : fmt({ weekday: "long", month: "long", day: "numeric", year: "numeric" });
 }
 
-export function where(n: ReminderInput["notification"], season?: number) {
+// `country`: the date is borrowed from there ("Digital (rent or buy) · UK date").
+export function where(n: ReminderInput["notification"], season?: number, country?: string) {
   const place =
     n.medium === "theatrical"
       ? "In cinemas"
@@ -83,7 +85,8 @@ export function where(n: ReminderInput["notification"], season?: number) {
           ? `Digital · ${n.service}`
           : "Digital (rent or buy)"
         : n.service || "Streaming";
-  return season ? `Season ${season} · ${place}` : place;
+  const borrowed = country ? ` · ${countryName(country)} date` : "";
+  return (season ? `Season ${season} · ${place}` : place) + borrowed;
 }
 
 export function renderReminder({
@@ -96,7 +99,7 @@ export function renderReminder({
   const name = title?.name || n.titleName || "Your followed title";
   const label = LABELS[n.kind] || { eyebrow: "Release reminder", lead: "has an update" };
   const date = when(n.date, release?.precision),
-    channel = where(n, release?.season);
+    channel = where(n, release?.season, release?.country);
   const meta = [
     title?.mediaType === "tv" ? "TV series" : title?.mediaType === "movie" ? "Movie" : "",
     title?.year ? String(title.year) : "",

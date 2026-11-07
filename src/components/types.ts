@@ -56,7 +56,19 @@ export type State = {
   notifications: Notice[];
   health: { id: string; state: string; note: string; updatedAt: string }[];
   sources: { tmdb: boolean; email?: boolean };
+  /** Movies (and TV seasons) marked watched; their released entries leave Following. */
+  watched?: Watched[];
 };
+export type Watched = {
+  /** titleId, or `${titleId}:s${season}` for a season. */
+  id: string;
+  titleId: string;
+  season?: number;
+  watchedAt: string;
+};
+/** The watched-mark id for a release: per season for TV, per title for movies. */
+export const watchKey = (titleId: string, season?: number) =>
+  season ? `${titleId}:s${season}` : titleId;
 export type Page = "movies" | "tv" | "search" | "following" | "settings";
 export type User = { email: string };
 export const countries: Record<string, string> = {

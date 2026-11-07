@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ExternalLink, Play, Plus, VideoOff, X } from "lucide-react";
+import { CircleCheck, ExternalLink, Play, Plus, VideoOff, X } from "lucide-react";
+import { saveWatched } from "./following";
 import { Bell, Icon, Modal, Poster, airingEpisode, channel, shortDate } from "./ui";
 import {
   api,
@@ -14,8 +15,9 @@ import {
   type Title,
   type Release,
   type Season,
+  watchKey,
 } from "./types";
-import { dayInZone, type Medium } from "../model";
+import { countryName, dayInZone, type Medium } from "../model";
 type Trailer = { key: string; name: string };
 // Trailers looked up this session, by title: reopening a title knows at once.
 // Plain fetch rather than api() (which skips the HTTP cache): the server lets the
@@ -339,9 +341,28 @@ export function TitleDetails({
                         Next episode: E{next.episode} · {shortDate(next.date)}
                       </span>
                     )}
+                    {e.country && (
+                      <span className="channel-borrowed">
+                        {countryName(e.country)} date
+                        {/* Phones keep just the country, so the row's label keeps its width. */}
+                        <span className="channel-borrowed-more">
+                          {" "}· not announced in {countryName(market)} yet
+                        </span>
+                      </span>
+                    )}
                   </span>
                 );
               })
+            ) : medium === "digital" && t.mediaType === "movie" ? (
+              // No digital date anywhere yet: adding one is a tap away.
+              <button
+                type="button"
+                className="text-button add-date channel-add"
+                onClick={() => setEditor(null)}
+              >
+                <Plus size={13} strokeWidth={1.75} aria-hidden="true" />
+                Add date
+              </button>
             ) : (
               <span className="date-tba">TBA</span>
             )}
@@ -402,6 +423,33 @@ export function TitleDetails({
       : [],
     streamingDates = ownDates.length ? ownDates : anyService;
   const today = dayInZone(new Date(), state.settings.timezone);
+  // Watched applies to a followed title that's out: the movie, or a show's
+  // latest released season.
+  const released = subscriptions.length
+      ? events.filter((e) => e.date && e.date.slice(0, 10) <= today)
+      : [],
+    watchSeason =
+      t.mediaType === "tv"
+        ? Math.max(0, ...released.map((e) => e.season || 0)) || undefined
+        : undefined,
+    canWatch = released.length > 0 && (t.mediaType !== "tv" || !!watchSeason),
+    watched = !!state.watched?.some((w) => w.id === watchKey(t.id, watchSeason));
+  async function toggleWatched() {
+    setBusy("watched");
+    try {
+      await saveWatched(t.id, watchSeason, !watched);
+      await refresh();
+      notify(
+        watched
+          ? "Back on Following"
+          : `Marked watched${watchSeason ? ` · Season ${watchSeason}` : ""}`,
+      );
+    } catch (error) {
+      onError(error);
+    } finally {
+      setBusy("");
+    }
+  }
   const network = t.network,
     networkLogo = network ? network.logo || serviceLogos[network.name] : null;
   const meta = [
@@ -496,7 +544,7 @@ export function TitleDetails({
             {meta.length > 0 && (
               <p className="title-meta">{meta.join(" · ")}</p>
             )}
-            {(!!t.seasons?.length || t.imdbId || tmdb) && (
+            {(!!t.seasons?.length || t.imdbId || tmdb || canWatch) && (
               <div className="title-actions">
                 {!!t.seasons?.length && (
                   <div className="season-pick">
@@ -556,6 +604,22 @@ export function TitleDetails({
                       <Play size={12} strokeWidth={1.75} aria-hidden="true" />
                     )}
                     {trailer === null ? "No trailer" : "Trailer"}
+                  </button>
+                )}
+                {canWatch && (
+                  <button
+                    type="button"
+                    className={`imdb-link watched-link${watched ? " is-on" : ""}`}
+                    aria-pressed={watched}
+                    disabled={busy === "watched"}
+                    onClick={() => void toggleWatched()}
+                  >
+                    <CircleCheck size={12} strokeWidth={1.75} aria-hidden="true" />
+                    {watched
+                      ? "Watched"
+                      : watchSeason
+                        ? `Mark S${watchSeason} watched`
+                        : "Mark watched"}
                   </button>
                 )}
               </div>

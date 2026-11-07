@@ -1,9 +1,12 @@
 // digital: the first rent/buy/VOD date (any service); streaming: a subscription premiere.
 export type Medium = 'theatrical' | 'streaming' | 'digital';
-export type Release = { id:string; titleId:string; market:string; medium:Medium; service:string|null; offer:string; date:string|null; endDate?:string|null; precision:'day'|'month'|'quarter'|'year'|'unknown'; status:'announced'|'estimated'|'postponed'|'cancelled'|'first_observed'; source:string; sourceUrl:string; revision:number; manual?:boolean; season?:number };
+export type Release = { id:string; titleId:string; market:string; medium:Medium; service:string|null; offer:string; date:string|null; endDate?:string|null; precision:'day'|'month'|'quarter'|'year'|'unknown'; status:'announced'|'estimated'|'postponed'|'cancelled'|'first_observed'; source:string; sourceUrl:string; revision:number; manual?:boolean; season?:number; country?:string };
 export type Subscription = { id:string; titleId:string; market:string; medium:Medium; services:string[]; rules:string[] };
 export function matches(s:Subscription,e:Release) { return s.titleId===e.titleId && s.market===e.market && s.medium===e.medium && (e.medium!=='streaming'||e.offer==='subscription') && (!s.services.length || !!e.service && s.services.includes(e.service)); }
+// A borrowed date's country isn't material: the same date from another country is no news.
 export function material(e:Release) { return JSON.stringify([e.market,e.medium,e.service,e.offer,e.date,e.endDate||null,e.precision,e.status]); }
+// Short display name for a country code: "UK" and "US", else the English region name.
+export function countryName(code:string) { if(code==='GB') return 'UK'; if(code==='US') return 'US'; try { return new Intl.DisplayNames(['en'],{type:'region'}).of(code)||code; } catch { return code; } }
 export function dayInZone(now:Date,zone:string) { return new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(now); }
 export function due(e:Release,kind:string,now:Date,zone:string,hour:number) {
  if(e.precision!=='day'||!e.date||['postponed','cancelled'].includes(e.status)) return false;

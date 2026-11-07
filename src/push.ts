@@ -62,12 +62,12 @@ export function pushPayload(
     medium: string;
     service?: string | null;
   },
-  release?: { season?: number; precision?: string } | null,
+  release?: { season?: number; precision?: string; country?: string } | null,
 ): PushPayload {
   const label = LABELS[n.kind]?.eyebrow || "Release reminder";
   return {
     title: `${label}: ${n.titleName || "Your followed title"}`,
-    body: `${where(n, release?.season)} · ${when(n.date, release?.precision, true)}`,
+    body: `${where(n, release?.season, release?.country)} · ${when(n.date, release?.precision, true)}`,
     tag: n.id,
     url: "/following",
   };

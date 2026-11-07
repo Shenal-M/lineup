@@ -453,6 +453,21 @@ test("round-trip optimised store writes", { skip: !url }, async (t) => {
       assert.equal(data.notifications[99].id, "n104");
     });
 
+    await t.test("watched marks are kept, idempotent, and come with the state", async () => {
+      await fresh();
+      const mark = { id: "tmdb-tv-1:s2", titleId: "tmdb-tv-1", season: 2 };
+      await s.setWatched(mark, true);
+      const first = (await s.stateData()).watched;
+      await s.setWatched(mark, true);
+      const again = (await s.stateData()).watched;
+      assert.equal(again.length, 1);
+      // Marking twice keeps the original time.
+      assert.equal(again[0].watchedAt, first[0].watchedAt);
+      assert.equal(again[0].season, 2);
+      await s.setWatched(mark, false);
+      assert.equal((await s.stateData()).watched.length, 0);
+    });
+
     await t.test("identical imports over a manual correction are observed once", async () => {
       await fresh();
       const imported = { ...event, medium: "theatrical" as const, service: null, offer: "ticket" };

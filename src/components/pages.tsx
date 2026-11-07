@@ -108,7 +108,7 @@ const sorts: [UpcomingView["sort"], string][] = [
 const addMonths = (d: Date, n: number) =>
   new Date(d.getFullYear(), d.getMonth() + n, 1);
 const monthIndex = (d: Date) => d.getFullYear() * 12 + d.getMonth();
-function scrollBehavior(): ScrollBehavior {
+export function scrollBehavior(): ScrollBehavior {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches
     ? "auto"
     : "smooth";

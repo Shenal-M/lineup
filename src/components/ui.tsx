@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { Title, Release, Episode } from "./types";
 import { dateLabel } from "./types";
-import { dayInZone } from "../model";
+import { countryName, dayInZone } from "../model";
 import {
   Bell as BellIcon,
   BellRing,
@@ -208,7 +208,9 @@ export function channel(e: Release) {
           ? `Digital · ${e.service}`
           : "Digital"
         : e.service || "Streaming";
-  return e.season ? `Season ${e.season} · ${where}` : where;
+  // A date borrowed from another country says so: "Digital · UK date".
+  const borrowed = e.country ? ` · ${countryName(e.country)} date` : "";
+  return (e.season ? `Season ${e.season} · ${where}` : where) + borrowed;
 }
 export function shortDate(date?: string | null) {
   if (!date) return "Date TBA";

@@ -28,3 +28,11 @@ test("month-precision digital dates and unstored titles still read well", () => 
   assert.ok(html.includes("Digital (rent or buy)"));
   assert.ok(html.includes('href="https://lineup.example.com"'));
 });
+
+test("a digital date borrowed from another country names that country", () => {
+  const { text } = renderReminder({
+    notification: { kind: "announced", date: "2026-11-16", medium: "digital", titleName: "Charlie Harper" },
+    release: { precision: "day", country: "GB" },
+  });
+  assert.ok(text.includes("Digital (rent or buy) · UK date"));
+});

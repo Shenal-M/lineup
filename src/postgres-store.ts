@@ -371,10 +371,20 @@ export function openPostgresStore(url: string) {
           (ids ? ` and id in (${list(ids)})` : ""),
       );
     },
+    // Watched marks (a movie, or one season of a show). They only hide released
+    // entries from Following, so they are kept even if the title is unfollowed.
+    setWatched: async (w: { id: string; titleId: string; season?: number }, on: boolean) => {
+      if (on)
+        await run(
+          `insert into records(kind,id,body) values('watched',${lit(w.id)},${json({ ...w, watchedAt: new Date().toISOString() })}) ` +
+            `on conflict(kind,id) do nothing`,
+        );
+      else await run(`delete from records where kind='watched' and id=${lit(w.id)}`);
+    },
     // Everything the app shell needs in one round trip; notifications are capped to the
     // latest 100 and returned oldest first.
     stateData: async () => {
-      const kinds = ["titles", "releases", "subscriptions", "settings", "health"];
+      const kinds = ["titles", "releases", "subscriptions", "settings", "health", "watched"];
       const out: Record<string, any[]> = Object.fromEntries(
         [...kinds, "notifications"].map((k) => [k, []]),
       );

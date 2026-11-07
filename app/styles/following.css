@@ -99,7 +99,155 @@
   color: var(--text-3);
 }
 
+/* Released sits above the heading, newest nearest to it; a rule marks today. */
+.follow-past-wrap {
+  margin-bottom: 28px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+}
+.follow-past-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.follow-watched {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 32px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.follow-watched span,
+.follow-reveal span {
+  font: 12px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.follow-more.is-earlier {
+  margin: 0 0 8px 72px;
+}
+/* Tall enough that the page can always open on the heading. */
+.follow-now.has-past {
+  min-height: calc(100vh - var(--header));
+}
+.follow-now .page-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+}
+.follow-now .page-heading p {
+  grid-column: 1 / -1;
+}
+/* "↑ Released 6": the way up to the past, beside the title. */
+.follow-reveal {
+  grid-column: 2;
+  grid-row: 1;
+  gap: 6px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 12px 0 10px;
+  border-color: var(--border);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.follow-reveal svg {
+  color: var(--text-3);
+}
+/* "↓ Upcoming": floats in while you're up in the past. */
+.follow-to-now {
+  position: fixed;
+  bottom: 24px;
+  left: calc(var(--sidebar) + (100% - var(--sidebar)) / 2);
+  z-index: 14;
+  gap: 6px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 16px 0 12px;
+  border-color: var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out),
+    visibility 0s linear 180ms;
+}
+.follow-to-now.is-shown {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+/* Released rows: the countdown moves under the title; the right column is the
+   watched check. */
+.follow-row.is-past .follow-sub {
+  display: flex;
+  margin-top: 4px;
+}
+.follow-row.is-past .countdown.is-inline {
+  display: block;
+  padding: 0;
+  font-size: 11px;
+}
+.watch-btn {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-3);
+}
+.watch-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+/* Watched sheet: a row opens the title; the arrow puts it back on Following. */
+.watched-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.watched-item .sheet-item {
+  flex: 1;
+  min-width: 0;
+}
+.watched-restore {
+  flex: none;
+  margin-right: 4px;
+  color: var(--text-3);
+}
+
 @media (hover: hover) {
+  .follow-reveal:hover:not(:disabled),
+  .follow-watched:hover:not(:disabled) {
+    color: var(--text);
+  }
+  .follow-reveal:hover:not(:disabled) {
+    border-color: var(--border-strong);
+  }
+  .watch-btn:hover:not(:disabled),
+  .watched-restore:hover:not(:disabled) {
+    color: var(--accent);
+  }
   .follow-past .title-row:hover .poster {
     opacity: 1;
   }
@@ -120,6 +268,37 @@
   .follow-more {
     min-height: 44px;
     margin-left: 52px;
+  }
+  .follow-more.is-earlier {
+    margin: 0 0 4px 52px;
+  }
+  .follow-past-wrap {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+  }
+  .follow-watched {
+    min-height: 44px;
+  }
+  .follow-now.has-past {
+    min-height: calc(
+      100dvh - var(--header) - env(safe-area-inset-top) - 57px - env(safe-area-inset-bottom)
+    );
+  }
+  .follow-reveal {
+    height: 36px;
+    min-height: 36px;
+  }
+  .follow-to-now {
+    bottom: calc(57px + 16px + env(safe-area-inset-bottom));
+    left: 50%;
+    height: 40px;
+    min-height: 40px;
+  }
+  .watch-btn {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    margin-right: -4px;
   }
   /* Tighter timeline: smaller posters, less air between days and months. */
   .follow-month {
@@ -178,7 +357,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .follow-past .poster,
-  .follow-more {
+  .follow-more,
+  .follow-to-now {
     transition: none;
+  }
+  .watch-btn:active:not(:disabled) {
+    transform: none;
   }
 }

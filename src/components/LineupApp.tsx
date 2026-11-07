@@ -423,7 +423,13 @@ export function LineupApp() {
                 onError={fail}
               />
             ) : page === "following" ? (
-              <Following state={state} lookup={lookup} onSelect={selectTitle} />
+              <Following
+                state={state}
+                lookup={lookup}
+                onSelect={selectTitle}
+                refresh={refresh}
+                notify={notify}
+              />
             ) : (
               <SettingsPage
                 state={state}

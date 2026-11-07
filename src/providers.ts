@@ -162,10 +162,20 @@ export function movieReleases(d: any): Release[] {
   const titleId = `tmdb-movie-${d.id}`;
   const sourceUrl = `https://www.themoviedb.org/movie/${d.id}/releases`;
   const out: Release[] = [];
+  const results: any[] = d.release_dates?.results || [];
+  const firstDigital = (dates: any[]) =>
+    dates
+      .filter((x) => x.type === 4 && typeof x.release_date === "string")
+      .sort((a, b) => a.release_date.localeCompare(b.release_date))[0];
+  // The earliest digital date anywhere, borrowed by markets without their own; each
+  // refresh re-picks it, so a sooner announcement elsewhere (or the market's own date)
+  // takes over.
+  const borrowed = results
+    .map((r) => ({ country: r.iso_3166_1 as string, first: firstDigital(r.release_dates || []) }))
+    .filter((r) => r.first)
+    .sort((a, b) => a.first.release_date.localeCompare(b.first.release_date))[0];
   for (const market of MARKETS) {
-    const dates: any[] = (d.release_dates?.results || []).find(
-      (r: any) => r.iso_3166_1 === market,
-    )?.release_dates || [];
+    const dates: any[] = results.find((r: any) => r.iso_3166_1 === market)?.release_dates || [];
     const earliest = (type: number) =>
       dates
         .filter((x) => x.type === type && typeof x.release_date === "string")
@@ -190,11 +200,11 @@ export function movieReleases(d: any): Release[] {
       });
     // The earliest digital release, whatever it is (rent/buy, VOD or a streaming
     // premiere). A subscription service named in its note is kept as a hint.
-    const first = dates
-      .filter((x) => x.type === 4 && typeof x.release_date === "string")
-      .sort((a, b) => a.release_date.localeCompare(b.release_date))[0];
+    const own = firstDigital(dates),
+      first = own || borrowed?.first;
     if (first) {
-      const service = serviceFromNote(first.note);
+      const service = serviceFromNote(first.note),
+        country = own ? undefined : borrowed!.country;
       out.push({
         id: `${titleId}-${market}-digital`,
         titleId,
@@ -205,9 +215,14 @@ export function movieReleases(d: any): Release[] {
         date: day(first.release_date),
         precision: "day",
         status: "announced",
-        source: service ? `TMDB · digital (${service})` : "TMDB · digital",
+        source:
+          service || country
+            ? `TMDB · digital (${[service, country].filter(Boolean).join(", ")})`
+            : "TMDB · digital",
         sourceUrl,
         revision: 1,
+        // Borrowed from another country: no date announced for this market yet.
+        ...(country ? { country } : {}),
       });
     }
   }

@@ -3,8 +3,41 @@
 const ICON = "/icons/icon-192.png";
 // Android draws the status-bar badge from the alpha channel only.
 const BADGE = "/icons/badge-96.png";
+// Reminders mostly arrive while the phone is idle, when Android may not fetch the
+// icon in time and falls back to Chrome's. Both images are kept here at install
+// and handed to the notification inline, so every push shows the Lineup mark.
+const ASSETS = "lineup-notify-v1";
 
-self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
+  event.waitUntil(
+    caches
+      .open(ASSETS)
+      .then((cache) => cache.addAll([ICON, BADGE]))
+      .catch(() => {}),
+  );
+});
+
+// The image as a data: URL, from the cache (refilled if missing); the plain path if
+// neither the cache nor the network can supply it.
+async function inline(path) {
+  try {
+    const cache = await caches.open(ASSETS);
+    let res = await cache.match(path);
+    if (!res) {
+      res = await fetch(path);
+      if (!res.ok) return path;
+      await cache.put(path, res.clone());
+    }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return `data:${res.headers.get("content-type") || "image/png"};base64,${btoa(binary)}`;
+  } catch {
+    return path;
+  }
+}
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
 // Payload: { title, body, tag, url } (src/push.ts).
@@ -16,13 +49,16 @@ self.addEventListener("push", (event) => {
     data = { body: event.data ? event.data.text() : "" };
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || "Lineup", {
-      body: data.body || "",
-      icon: ICON,
-      badge: BADGE,
-      tag: data.tag || undefined,
-      data: { url: data.url || "/" },
-    }),
+    (async () => {
+      const [icon, badge] = await Promise.all([inline(ICON), inline(BADGE)]);
+      await self.registration.showNotification(data.title || "Lineup", {
+        body: data.body || "",
+        icon,
+        badge,
+        tag: data.tag || undefined,
+        data: { url: data.url || "/" },
+      });
+    })(),
   );
 });
 

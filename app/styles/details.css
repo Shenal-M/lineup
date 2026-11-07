@@ -164,6 +164,23 @@ dialog form > .primary {
   border-color: var(--border-strong);
   color: var(--text);
 }
+/* Watched: a pill button like Trailer; lime once marked. */
+.watched-link {
+  min-height: 0;
+  padding: 0 12px 0 10px;
+  line-height: 1;
+}
+.watched-link:active:not(:disabled) {
+  transform: none;
+}
+.watched-link.is-on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.watched-link.is-on svg {
+  color: var(--accent);
+}
 /* Tapped before the lookup answered: the icon breathes until it plays. */
 .trailer-link.is-waiting svg {
   animation: trailer-wait 900ms ease-in-out infinite alternate;
@@ -360,6 +377,17 @@ dialog form > .primary {
 .channel-next {
   font-size: 12px;
   color: var(--text-3);
+}
+/* A digital date borrowed from another country until this market has one. */
+.channel-borrowed {
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: right;
+}
+/* "Add date" in an empty Digital row: sits where the date would. */
+.add-date.channel-add {
+  margin-top: 0;
+  min-height: 32px;
 }
 .date-tba {
   color: var(--text-3);
@@ -637,6 +665,14 @@ dialog form > .primary {
   }
   .trailer {
     margin: 0 0 20px;
+  }
+  .channel-borrowed-more {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .trailer-close {
     min-height: 36px;

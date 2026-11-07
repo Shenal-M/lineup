@@ -1,10 +1,35 @@
 "use client";
 import Link from "next/link";
-import { memo, useMemo, useState } from "react";
-import { Empty, Heading, Poster, airingEpisode, channel, shortDate } from "./ui";
-import { countries, dateLabel, type Release, type Title } from "./types";
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { ArrowDown, ArrowUp, CircleCheck, RotateCcw } from "lucide-react";
+import {
+  Empty,
+  Heading,
+  Icon,
+  Modal,
+  Poster,
+  airingEpisode,
+  channel,
+  shortDate,
+} from "./ui";
+import {
+  api,
+  countries,
+  dateLabel,
+  watchKey,
+  type Release,
+  type State,
+  type Title,
+} from "./types";
 import { dayInZone, matches } from "../model";
-import type { Lookup, Shared } from "./pages";
+import { scrollBehavior, type Lookup, type Shared } from "./pages";
 
 type Kind = "all" | "movie" | "tv";
 const kinds: [Kind, string][] = [
@@ -12,8 +37,13 @@ const kinds: [Kind, string][] = [
   ["movie", "Movies"],
   ["tv", "TV shows"],
 ];
-/** Released entries shown before "Show all". */
+/** Released entries shown before "Show earlier". */
 const PAST_LIMIT = 10;
+
+/** Marks (or un-marks) a movie, or one season of a show, as watched. */
+export function saveWatched(titleId: string, season: number | undefined, on: boolean) {
+  return api("watched", on ? "POST" : "DELETE", { titleId, season });
+}
 
 /** True when some subscription of the release's title matches it. */
 function followedRelease(lookup: Lookup, e: Release) {
@@ -171,6 +201,7 @@ const Row = memo(function Row({
   airing,
   today,
   onSelect,
+  onWatched,
 }: {
   title: Title;
   event?: Release;
@@ -178,6 +209,8 @@ const Row = memo(function Row({
   airing?: Entry["airing"];
   today: string;
   onSelect: (t: Title) => void;
+  /** Released rows: marks the row watched (it leaves the list). */
+  onWatched?: (t: Title, e: Release) => void;
 }) {
   const when = days === undefined ? undefined : countdown(days),
     // Within a week: the countdown takes the accent, so the nearest stand out.
@@ -188,7 +221,7 @@ const Row = memo(function Row({
         .filter(Boolean)
         .join(" · ");
   return (
-    <article className="title-row follow-row">
+    <article className={`title-row follow-row${onWatched ? " is-past" : ""}`}>
       <Poster title={t} />
       <div className="card-text">
         <button
@@ -222,7 +255,16 @@ const Row = memo(function Row({
           </div>
         )}
       </div>
-      {when ? (
+      {onWatched && e ? (
+        <button
+          className="watch-btn"
+          onClick={() => onWatched(t, e)}
+          aria-label={`Mark ${t.name}${e.season ? ` season ${e.season}` : ""} watched`}
+          title="Mark watched"
+        >
+          <CircleCheck size={18} strokeWidth={1.75} aria-hidden="true" />
+        </button>
+      ) : when ? (
         <span
           className={`countdown${soon}`}
           aria-hidden="true"
@@ -240,10 +282,12 @@ function Timeline({
   months,
   today,
   onSelect,
+  onWatched,
 }: {
   months: Month[];
   today: string;
   onSelect: (t: Title) => void;
+  onWatched?: (t: Title, e: Release) => void;
 }) {
   return months.map((m) => (
     <div key={m.key} className="follow-month">
@@ -262,6 +306,7 @@ function Timeline({
                   airing={airing}
                   today={today}
                   onSelect={onSelect}
+                  onWatched={onWatched}
                 />
               ))}
             </div>
@@ -272,11 +317,98 @@ function Timeline({
   ));
 }
 
-export function Following({ state, lookup, onSelect }: Shared) {
+/**
+ * The Watched list: movies and seasons marked watched, newest first. Tapping one
+ * opens its details; the arrow puts it back on Following.
+ */
+function WatchedSheet({
+  items,
+  onSelect,
+  onRestore,
+  onClose,
+}: {
+  items: { id: string; title: Title; season?: number; watchedAt: string }[];
+  onSelect: (t: Title) => void;
+  onRestore: (titleId: string, season?: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal label="Watched" onClose={onClose} className="watched-dialog">
+      <div className="dialog-top">
+        <h2>Watched</h2>
+        <button
+          className="icon-button detail-close"
+          aria-label="Close watched"
+          onClick={onClose}
+        >
+          <Icon name="close" />
+        </button>
+      </div>
+      {items.length ? (
+        <ul className="sheet-list watched-list">
+          {items.map((w) => (
+            <li key={w.id} className="watched-item">
+              <button
+                className="sheet-item"
+                onClick={() => {
+                  onClose();
+                  onSelect(w.title);
+                }}
+              >
+                <span className="sheet-title">{w.title.name}</span>
+                <span className="sheet-meta">
+                  {[
+                    w.season ? `Season ${w.season}` : w.title.mediaType === "tv" ? "TV series" : "Movie",
+                    `Watched ${shortDate(w.watchedAt.slice(0, 10))}`,
+                  ].join(" · ")}
+                </span>
+              </button>
+              <button
+                className="icon-button watched-restore"
+                aria-label={`Move ${w.title.name}${w.season ? ` season ${w.season}` : ""} back to Following`}
+                title="Move back to Following"
+                onClick={() => onRestore(w.title.id, w.season)}
+              >
+                <RotateCcw size={16} strokeWidth={1.75} aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="sheet-note">Nothing marked watched yet.</p>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * Following is one timeline around today: released titles sit above the page
+ * heading (newest nearest to it), upcoming ones below. The page opens on the
+ * heading, so the future is what you see first and the past is a scroll up.
+ * Released content changing above (filters, "Show earlier", marking watched)
+ * keeps the heading where it was on screen, like a chat keeps its latest line.
+ */
+export function Following({
+  state,
+  lookup,
+  onSelect,
+  refresh,
+  notify,
+}: Shared & {
+  refresh: () => Promise<State>;
+  notify: (s: string) => void;
+}) {
   const [kind, setKind] = useState<Kind>("all");
   const [showAll, setShowAll] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  // Watched marks saved but not yet back from the server (hidden at once).
+  const [hiding, setHiding] = useState<Set<string>>(() => new Set());
   const { market, timezone } = state.settings;
   const today = dayInZone(new Date(), timezone);
+  const watchedIds = useMemo(
+    () => new Set([...(state.watched || []).map((w) => w.id), ...hiding]),
+    [state.watched, hiding],
+  );
 
   // Every live tracked release in the market, split by where it falls.
   const all = useMemo(() => {
@@ -315,8 +447,10 @@ export function Following({ state, lookup, onSelect }: Shared) {
       const day = e.precision === "day",
         end = lastDay(e.date, e.precision),
         entry = { title, event: e, days: daysBetween(today, day ? e.date : end) };
-      if (end < today) past.push(entry);
-      else (day ? upcoming : later).push(entry);
+      // Watched only hides what's out; a later digital date stays upcoming.
+      if (end < today) {
+        if (!watchedIds.has(watchKey(title.id, e.season))) past.push(entry);
+      } else (day ? upcoming : later).push(entry);
     }
     const byName = (a: Entry, b: Entry) =>
       a.title.name.localeCompare(b.title.name);
@@ -327,12 +461,13 @@ export function Following({ state, lookup, onSelect }: Shared) {
           lastDay(b.event.date!, b.event.precision),
         ) || byName(a, b),
     );
-    past.sort((a, b) => b.event.date!.localeCompare(a.event.date!) || byName(a, b));
+    // Oldest first: the list reads down towards today.
+    past.sort((a, b) => a.event.date!.localeCompare(b.event.date!) || byName(a, b));
     const undated = [...titles.values()]
       .filter((t) => !dated.has(t.id))
       .sort((a, b) => a.name.localeCompare(b.name));
-    return { upcoming, later, past, undated, count: titles.size };
-  }, [state.titles, state.releases, market, today, lookup]);
+    return { upcoming, later, past, undated, titles, count: titles.size };
+  }, [state.titles, state.releases, market, today, lookup, watchedIds]);
 
   // The same lists for the selected kind, with months grouped for display.
   const view = useMemo(() => {
@@ -350,9 +485,118 @@ export function Following({ state, lookup, onSelect }: Shared) {
       laterGroups: byPeriod(later),
     };
   }, [all, kind]);
+  // The newest released entries; "Show earlier" adds the rest above them.
   const pastMonths = useMemo(
-    () => byMonth(showAll ? view.past : view.past.slice(0, PAST_LIMIT)),
+    () => byMonth(showAll ? view.past : view.past.slice(-PAST_LIMIT)),
     [view.past, showAll],
+  );
+  const watchedItems = useMemo(
+    () =>
+      (state.watched || [])
+        .filter((w) => all.titles.has(w.titleId))
+        .map((w) => ({ ...w, title: all.titles.get(w.titleId)! }))
+        .sort((a, b) => b.watchedAt.localeCompare(a.watchedAt)),
+    [state.watched, all.titles],
+  );
+
+  async function markWatched(t: Title, e: Release, on = true) {
+    const key = watchKey(t.id, e.season);
+    if (on) setHiding((h) => new Set(h).add(key));
+    try {
+      await saveWatched(t.id, e.season, on);
+      await refresh();
+      if (on)
+        notify(`${t.name}${e.season ? ` · Season ${e.season}` : ""} moved to Watched`);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Couldn’t save that. Try again.");
+    } finally {
+      if (on)
+        setHiding((h) => {
+          const n = new Set(h);
+          n.delete(key);
+          return n;
+        });
+    }
+  }
+
+  // Scroll anchoring around the heading ("now"). The first time there is
+  // anything above it, the page scrolls so the heading sits where the page
+  // would start; after that, any change in that height (filters, "Show
+  // earlier", a row marked watched, fonts loading) is scrolled away so the
+  // heading stays put. Observed after layout and before paint, so nothing jumps.
+  const pastRef = useRef<HTMLDivElement>(null),
+    nowRef = useRef<HTMLDivElement>(null);
+  const shown = all.count > 0;
+  useLayoutEffect(() => {
+    const past = pastRef.current,
+      now = nowRef.current;
+    if (!past || !now) return;
+    const above = () => now.getBoundingClientRect().top - past.getBoundingClientRect().top;
+    let last = -1;
+    const ro = new ResizeObserver(() => {
+      const h = above();
+      if (last <= 0 && h > 0) {
+        window.scrollTo(0, h);
+        // Navigation can reset the scroll once more; anchor again before paint.
+        requestAnimationFrame(() => window.scrollY < 1 && window.scrollTo(0, above()));
+      } else if (last > 0 && h !== last) window.scrollBy(0, h - last);
+      last = h;
+    });
+    ro.observe(past, { box: "border-box" });
+    return () => ro.disconnect();
+  }, [shown]);
+  // The page does its own anchoring above; the browser's would double it.
+  useEffect(() => {
+    const root = document.documentElement,
+      prev = root.style.overflowAnchor;
+    root.style.overflowAnchor = "none";
+    return () => {
+      root.style.overflowAnchor = prev;
+    };
+  }, []);
+
+  // "Upcoming" pill: shown while the heading is below the screen (scrolled up
+  // into the released list), to jump straight back to today.
+  const [up, setUp] = useState(false);
+  const hasPast = view.past.length > 0;
+  useEffect(() => {
+    const now = nowRef.current;
+    if (!now || !hasPast) return setUp(false);
+    const io = new IntersectionObserver(([entry]) =>
+      setUp(entry.boundingClientRect.top > window.innerHeight - 80),
+    );
+    io.observe(now);
+    return () => io.disconnect();
+  }, [hasPast]);
+  const toNow = () => {
+    const now = nowRef.current,
+      past = pastRef.current;
+    if (now && past)
+      window.scrollTo({
+        top: now.getBoundingClientRect().top - past.getBoundingClientRect().top,
+        behavior: scrollBehavior(),
+      });
+  };
+  // Reveals the newest released rows just above the heading.
+  const toPast = () => {
+    const now = nowRef.current;
+    if (!now) return;
+    window.scrollTo({
+      top: Math.max(0, window.scrollY + now.getBoundingClientRect().top - window.innerHeight * 0.6),
+      behavior: scrollBehavior(),
+    });
+  };
+
+  const sheetNode = sheet && (
+    <WatchedSheet
+      items={watchedItems}
+      onSelect={onSelect}
+      onRestore={(titleId, season) => {
+        const t = all.titles.get(titleId);
+        if (t) void markWatched(t, { season } as Release, false);
+      }}
+      onClose={() => setSheet(false)}
+    />
   );
 
   if (!all.count)
@@ -379,103 +623,143 @@ export function Following({ state, lookup, onSelect }: Shared) {
     ? `${ahead} upcoming` +
       (next ? ` · next: ${next.title.name} ${lower(countdown(next.days))}` : "")
     : view.past.length
-      ? "Nothing dated coming up. Released titles are below."
+      ? "Nothing dated coming up."
       : "No dates yet. They’ll appear here once announced.";
   const nothing = !ahead && !view.past.length && !view.undated.length;
+  const hidden = showAll ? 0 : Math.max(0, view.past.length - PAST_LIMIT);
 
   return (
     <>
-      <Heading title="Following" subtitle={summary} />
-      <div className="toolbar">
-        <div className="filters" role="group" aria-label="Filter titles">
-          {kinds.map(([value, label]) => (
-            <button
-              key={value}
-              className={kind === value ? "active" : ""}
-              onClick={() => setKind(value)}
-              aria-pressed={kind === value}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+      <div ref={pastRef} className={hasPast ? "follow-past-wrap" : undefined}>
+        {hasPast && (
+          <section className="follow-section follow-past" aria-labelledby="follow-released">
+            <div className="follow-past-head">
+              <h2 id="follow-released" className="list-label">
+                Released <span>{view.past.length}</span>
+              </h2>
+              {watchedItems.length > 0 && (
+                <button className="text-button follow-watched" onClick={() => setSheet(true)}>
+                  Watched <span>{watchedItems.length}</span>
+                </button>
+              )}
+            </div>
+            {hidden > 0 && (
+              <button
+                className="text-button follow-more is-earlier"
+                onClick={() => setShowAll(true)}
+              >
+                Show {hidden} earlier
+              </button>
+            )}
+            <Timeline
+              months={pastMonths}
+              today={today}
+              onSelect={onSelect}
+              onWatched={(t, e) => void markWatched(t, e)}
+            />
+          </section>
+        )}
       </div>
 
-      {nothing && (
-        <p className="follow-none">
-          No {kind === "movie" ? "movies" : "TV shows"} followed.
-        </p>
-      )}
-
-      {ahead > 0 && (
-        <section className="follow-section" aria-labelledby="follow-upcoming">
-          <h2 id="follow-upcoming" className="list-label">
-            Upcoming <span>{ahead}</span>
-          </h2>
-          <Timeline
-            months={view.upcomingMonths}
-            today={today}
-            onSelect={onSelect}
-          />
-          {view.laterGroups.length > 0 && (
-            <div className="follow-month">
-              <h3 className="follow-month-label">Later</h3>
-              <div className="agenda">
-                {view.laterGroups.map((g) => (
-                  <section key={g.key}>
-                    <DayLabel group={g} today={today} />
-                    <div className="rows">
-                      {g.items.map(({ title, event }) => (
-                        <Row
-                          key={event.id}
-                          title={title}
-                          event={event}
-                          today={today}
-                          onSelect={onSelect}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            </div>
+      <div ref={nowRef} className={`follow-now${hasPast ? " has-past" : ""}`}>
+        <Heading title="Following" subtitle={summary}>
+          {hasPast ? (
+            <button className="follow-reveal" onClick={toPast}>
+              <ArrowUp size={14} strokeWidth={1.75} aria-hidden="true" />
+              Released <span>{view.past.length}</span>
+            </button>
+          ) : (
+            watchedItems.length > 0 && (
+              <button className="follow-reveal" onClick={() => setSheet(true)}>
+                <CircleCheck size={14} strokeWidth={1.75} aria-hidden="true" />
+                Watched <span>{watchedItems.length}</span>
+              </button>
+            )
           )}
-        </section>
-      )}
-
-      {view.undated.length > 0 && (
-        <section className="follow-section" aria-labelledby="follow-undated">
-          <h2 id="follow-undated" className="list-label">
-            No date yet <span>{view.undated.length}</span>
-          </h2>
-          <div className="rows follow-undated">
-            {view.undated.map((t) => (
-              <Row key={t.id} title={t} today={today} onSelect={onSelect} />
+        </Heading>
+        <div className="toolbar">
+          <div className="filters" role="group" aria-label="Filter titles">
+            {kinds.map(([value, label]) => (
+              <button
+                key={value}
+                className={kind === value ? "active" : ""}
+                onClick={() => setKind(value)}
+                aria-pressed={kind === value}
+              >
+                {label}
+              </button>
             ))}
           </div>
-        </section>
-      )}
+        </div>
 
-      {view.past.length > 0 && (
-        <section
-          className="follow-section follow-past"
-          aria-labelledby="follow-released"
+        {nothing && (
+          <p className="follow-none">
+            No {kind === "movie" ? "movies" : "TV shows"} followed.
+          </p>
+        )}
+
+        {ahead > 0 && (
+          <section className="follow-section" aria-labelledby="follow-upcoming">
+            <h2 id="follow-upcoming" className="list-label">
+              Upcoming <span>{ahead}</span>
+            </h2>
+            <Timeline
+              months={view.upcomingMonths}
+              today={today}
+              onSelect={onSelect}
+            />
+            {view.laterGroups.length > 0 && (
+              <div className="follow-month">
+                <h3 className="follow-month-label">Later</h3>
+                <div className="agenda">
+                  {view.laterGroups.map((g) => (
+                    <section key={g.key}>
+                      <DayLabel group={g} today={today} />
+                      <div className="rows">
+                        {g.items.map(({ title, event }) => (
+                          <Row
+                            key={event.id}
+                            title={title}
+                            event={event}
+                            today={today}
+                            onSelect={onSelect}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {view.undated.length > 0 && (
+          <section className="follow-section" aria-labelledby="follow-undated">
+            <h2 id="follow-undated" className="list-label">
+              No date yet <span>{view.undated.length}</span>
+            </h2>
+            <div className="rows follow-undated">
+              {view.undated.map((t) => (
+                <Row key={t.id} title={t} today={today} onSelect={onSelect} />
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+
+      {hasPast && (
+        <button
+          className={`follow-to-now${up ? " is-shown" : ""}`}
+          onClick={toNow}
+          tabIndex={up ? 0 : -1}
+          aria-hidden={!up}
         >
-          <h2 id="follow-released" className="list-label">
-            Released <span>{view.past.length}</span>
-          </h2>
-          <Timeline months={pastMonths} today={today} onSelect={onSelect} />
-          {view.past.length > PAST_LIMIT && (
-            <button
-              className="text-button follow-more"
-              onClick={() => setShowAll(!showAll)}
-              aria-expanded={showAll}
-            >
-              {showAll ? "Show fewer" : `Show all ${view.past.length}`}
-            </button>
-          )}
-        </section>
+          <ArrowDown size={14} strokeWidth={1.75} aria-hidden="true" />
+          Upcoming
+        </button>
       )}
+      {sheetNode}
     </>
   );
 }

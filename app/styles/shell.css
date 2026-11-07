@@ -561,9 +561,9 @@ button.sheet-item:active:not(:disabled) {
     bottom: calc(57px + 12px + env(safe-area-inset-bottom));
   }
 }
-/* The installed app: Android paints the gesture-bar strip below the page in the
-   manifest's theme colour (--bg). A solid bar in that same colour reads as one
-   surface down to the screen edge; see-through, it stopped at its own edge. */
+/* The installed app doesn't draw under Android's gesture bar; from Chrome 153
+   Chrome paints that strip in the manifest theme_color (--bg). A solid bar in the
+   same colour reads as one surface down to the screen edge. */
 @media (max-width: 760px) and (display-mode: standalone) {
   aside nav {
     background: var(--bg);
